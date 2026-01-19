@@ -48,11 +48,12 @@ class UserInDB(User):
 def hash_password(password: str) -> str:
     """Hash password with SHA256 and salt"""
     salt = "dorumake-salt-2025"
-    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    return hashlib.sha256(f"{salt}{password}".encode('utf-8')).hexdigest()
 
 
 # Admin password: "DoruMake2025!"
-ADMIN_PASSWORD_HASH = hash_password("DoruMake2025!")
+# Pre-computed hash to avoid encoding issues across systems
+ADMIN_PASSWORD_HASH = "1de29693cfb50f674868200722027f3a822d1de57ee505d99c2f770e01a8697d"
 
 # Hardcoded admin user (can be extended to database later)
 ADMIN_USERS = {
