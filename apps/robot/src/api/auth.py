@@ -85,21 +85,11 @@ def get_user(username: str) -> Optional[UserInDB]:
 
 def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
     """Authenticate a user"""
-    print(f"[AUTH DEBUG] Trying to authenticate: {username}")
-    print(f"[AUTH DEBUG] ADMIN_USERS: {ADMIN_USERS}")
     user = get_user(username)
-    print(f"[AUTH DEBUG] get_user result: {user}")
     if not user:
-        print("[AUTH DEBUG] User not found!")
         return None
-    input_hash = hash_password(password)
-    print(f"[AUTH DEBUG] Input password hash: {input_hash}")
-    print(f"[AUTH DEBUG] Stored password hash: {user.hashed_password}")
-    print(f"[AUTH DEBUG] Hashes match: {input_hash == user.hashed_password}")
     if not verify_password(password, user.hashed_password):
-        print("[AUTH DEBUG] Password verification failed!")
         return None
-    print("[AUTH DEBUG] Authentication successful!")
     return user
 
 
