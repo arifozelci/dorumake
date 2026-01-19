@@ -116,7 +116,7 @@ Sipariş mailleri bu adrese gelir. Excel eki içerir.
 │          └────────────────────┼────────────────────┘                         │
 │                               │                                              │
 │  ┌────────────────────────────▼────────────────────────────────┐            │
-│  │                      PostgreSQL                              │            │
+│  │                        MySQL                                 │            │
 │  │  - orders, order_items, order_logs                          │            │
 │  │  - emails, email_attachments                                │            │
 │  │  - suppliers, customers, products                           │            │

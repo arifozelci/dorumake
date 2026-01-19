@@ -4,8 +4,10 @@
 # Web Automation
 playwright==1.49.0
 
-# Database
-psycopg2-binary==2.9.9
+# Database (MySQL)
+pymysql==1.1.0
+aiomysql==0.2.0
+cryptography==42.0.2
 sqlalchemy==2.0.25
 alembic==1.13.1
 

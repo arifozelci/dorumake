@@ -27,8 +27,9 @@
 - [x] Pydantic settings yapılandırması
 - [x] Loguru logging sistemi
 - [x] Retry mekanizması (exponential backoff)
-- [🔄] SQLAlchemy modelleri
-- [ ] Database connection pool
+- [x] SQLAlchemy modelleri
+- [x] Database connection pool
+- [x] main.py entry point
 
 ---
 
@@ -57,43 +58,46 @@
 
 ## Faz 3: Robot Modülleri
 
-### 3.1 Base Robot
-- [ ] Abstract base class
-- [ ] Playwright browser yönetimi
-- [ ] Screenshot alma (hata durumunda)
-- [ ] Step logging
-- [ ] Timeout handling
+### 3.1 Base Robot ✅
+- [x] Abstract base class
+- [x] Playwright browser yönetimi
+- [x] Screenshot alma (hata durumunda)
+- [x] Step logging
+- [x] Timeout handling
+- [x] Retry with execute_step()
 
-### 3.2 Mutlu Akü Robot (VisionNext PRM)
-- [ ] Login fonksiyonu
-- [ ] Müşteri seçimi (sağ üst dropdown)
-- [ ] Menü navigasyonu (Satın Alma Siparişi)
-- [ ] Yeni sipariş oluşturma (Oluştur butonu)
-- [ ] Form doldurma:
-  - [ ] Depo seçimi
-  - [ ] Müşteri seçimi
-  - [ ] Personel seçimi
-  - [ ] Fiyat listesi seçimi
-  - [ ] Ödeme tipi ve vadesi
-  - [ ] Açıklama (Caspar sipariş no)
-- [ ] Ürünler sekmesi
-- [ ] ARA butonu ile ürün listesi
-- [ ] Ürün adetleri girişi
-- [ ] Kaydet (ürünler)
-- [ ] Kaydet (sipariş)
-- [ ] SAP Onayla butonu (KRİTİK!)
-- [ ] Sipariş numarası alma
+### 3.2 Mutlu Akü Robot (VisionNext PRM) ✅
+- [x] Login fonksiyonu
+- [x] Müşteri seçimi (sağ üst dropdown)
+- [x] Menü navigasyonu (Satın Alma Siparişi)
+- [x] Yeni sipariş oluşturma (Oluştur butonu)
+- [x] Form doldurma:
+  - [x] Depo seçimi
+  - [x] Müşteri seçimi
+  - [x] Personel seçimi
+  - [x] Fiyat listesi seçimi
+  - [x] Ödeme tipi ve vadesi
+  - [x] Açıklama (Caspar sipariş no)
+- [x] Ürünler sekmesi
+- [x] ARA butonu ile ürün listesi
+- [x] Ürün adetleri girişi
+- [x] Kaydet (ürünler)
+- [x] Kaydet (sipariş)
+- [x] SAP Onayla butonu (KRİTİK!)
+- [x] Sipariş numarası alma
+- [ ] Portal test ile selector doğrulama (gerçek portal gerekli)
 
-### 3.3 Mann & Hummel Robot (TecCom)
-- [ ] Login fonksiyonu
-- [ ] Menü navigasyonu (Dosya Yükle)
-- [ ] CSV dosyası oluşturma (Siparis_formu_TecOrder_2018.csv formatı)
-- [ ] Dosya yükleme
-- [ ] Tedarikçi seçimi (FILTRON-MANN+HUMMEL Türkiye)
-- [ ] Müşteri seçimi (Sapma gösteren sevk yeri adresi)
-- [ ] TALEP butonu
-- [ ] SİPARİŞ butonu
-- [ ] Sipariş numarası alma
+### 3.3 Mann & Hummel Robot (TecCom) ✅
+- [x] Login fonksiyonu
+- [x] Menü navigasyonu (Dosya Yükle)
+- [x] CSV dosyası oluşturma (Siparis_formu_TecOrder_2018.csv formatı)
+- [x] Dosya yükleme
+- [x] Tedarikçi seçimi (FILTRON-MANN+HUMMEL Türkiye)
+- [x] Müşteri seçimi (Sapma gösteren sevk yeri adresi)
+- [x] TALEP butonu
+- [x] SİPARİŞ butonu
+- [x] Sipariş numarası alma
+- [ ] Portal test ile selector doğrulama (gerçek portal gerekli)
 
 ---
 
