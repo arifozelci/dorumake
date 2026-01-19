@@ -1,0 +1,27 @@
+{
+  "name": "dorumake",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DoruMake - Sipariş Otomasyon Sistemi",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:generate": "cd packages/database && npx prisma generate",
+    "db:push": "cd packages/database && npx prisma db push",
+    "db:studio": "cd packages/database && npx prisma studio",
+    "robot:start": "cd apps/robot && python main.py",
+    "robot:install": "cd apps/robot && pip install -r requirements.txt"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "npm@10.0.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

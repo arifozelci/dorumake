@@ -1,0 +1,310 @@
+// DoruMake Database Schema
+// Sipariş Otomasyon Sistemi
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// TEMEL MODELLER
+// ============================================
+
+// Tedarikçiler (Mutlu Akü, Mann & Hummel, vs.)
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String   @unique // "Mutlu Akü", "Mann & Hummel"
+  code        String   @unique // "MUTLU", "MANN"
+  portalUrl   String?  // Portal giriş URL'i
+  username    String?  // Portal kullanıcı adı
+  password    String?  // Portal şifresi (encrypted)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders      Order[]
+  products    Product[]
+  customers   CustomerSupplierMapping[]
+
+  @@map("suppliers")
+}
+
+// Müşteriler (Castrol Bayileri)
+model Customer {
+  id            String   @id @default(cuid())
+  name          String   // "DALAY PETROL ÜRÜNLERİ"
+  code          String   @unique // "CASTROL_BATMAN_DALAY"
+  shipToCode    String?  // "DEPO/1"
+  address       String?
+  city          String?
+  district      String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders        Order[]
+  supplierMappings CustomerSupplierMapping[]
+
+  @@map("customers")
+}
+
+// Müşteri-Tedarikçi Eşlemesi (Mapping)
+model CustomerSupplierMapping {
+  id              String   @id @default(cuid())
+  customerId      String
+  supplierId      String
+  supplierCustomerCode String // Tedarikçi portalındaki müşteri kodu
+  supplierCustomerName String // Tedarikçi portalındaki müşteri adı
+  defaultDepo     String?  // Varsayılan depo
+  defaultPersonel String?  // Varsayılan personel
+  defaultOdemeVadesi String? // Varsayılan ödeme vadesi
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer        Customer @relation(fields: [customerId], references: [id])
+  supplier        Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([customerId, supplierId])
+  @@map("customer_supplier_mappings")
+}
+
+// Ürünler
+model Product {
+  id              String   @id @default(cuid())
+  supplierId      String
+  code            String   // "AF-CST-AUEFB-04-0630600-L52B13-01-0"
+  name            String   // "Castrol 12/63 EFB"
+  manufacturerCode String? // "EFB.L2.63.060.A"
+  paletIciMiktar  Int?     // 72
+  unit            String   @default("ADET")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  supplier        Supplier @relation(fields: [supplierId], references: [id])
+  orderItems      OrderItem[]
+
+  @@unique([supplierId, code])
+  @@map("products")
+}
+
+// ============================================
+// SİPARİŞ MODELLERİ
+// ============================================
+
+// Siparişler
+model Order {
+  id              String      @id @default(cuid())
+  supplierId      String
+  customerId      String
+
+  // Sipariş Bilgileri
+  orderCode       String      @unique // "M08D1-000001226"
+  casparOrderNo   String?     // Caspar sipariş numarası
+  orderDate       DateTime    @default(now())
+
+  // Durum
+  status          OrderStatus @default(PENDING)
+
+  // Portal Bilgileri
+  portalOrderNo   String?     // Portal'da oluşan sipariş no
+  sapTransferred  Boolean     @default(false) // SAP'e aktarıldı mı?
+
+  // İlişkili E-posta
+  emailId         String?
+
+  // Tutarlar
+  totalAmount     Decimal?    @db.Decimal(18, 2)
+  currency        String      @default("TRY")
+
+  // Notlar
+  notes           String?
+  errorMessage    String?
+
+  // Tarihler
+  processedAt     DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  supplier        Supplier    @relation(fields: [supplierId], references: [id])
+  customer        Customer    @relation(fields: [customerId], references: [id])
+  email           Email?      @relation(fields: [emailId], references: [id])
+  items           OrderItem[]
+  logs            OrderLog[]
+
+  @@map("orders")
+}
+
+// Sipariş Kalemleri
+model OrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  productId       String?
+
+  productCode     String   // Excel'den gelen ürün kodu
+  productName     String?  // Excel'den gelen ürün adı
+  quantity        Int      // Sipariş adedi
+
+  unitPrice       Decimal? @db.Decimal(18, 2)
+  totalPrice      Decimal? @db.Decimal(18, 2)
+  currency        String   @default("TRY")
+
+  shipmentDate    DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         Product? @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+// Sipariş Durumları
+enum OrderStatus {
+  PENDING         // Beklemede
+  PROCESSING      // İşleniyor
+  PORTAL_LOGIN    // Portal'a giriş yapılıyor
+  FORM_FILLING    // Form dolduruluyor
+  PRODUCTS_ADDING // Ürünler ekleniyor
+  SAVING          // Kaydediliyor
+  CONFIRMING      // Onaylanıyor (SAP)
+  COMPLETED       // Tamamlandı
+  FAILED          // Başarısız
+  CANCELLED       // İptal edildi
+}
+
+// ============================================
+// E-POSTA MODELLERİ
+// ============================================
+
+// E-postalar
+model Email {
+  id              String      @id @default(cuid())
+
+  // E-posta Bilgileri
+  messageId       String      @unique // IMAP message ID
+  subject         String
+  fromAddress     String
+  toAddress       String
+  receivedAt      DateTime
+
+  // İçerik
+  bodyText        String?
+  bodyHtml        String?
+
+  // Durum
+  status          EmailStatus @default(UNPROCESSED)
+
+  // Ek Dosyalar
+  hasAttachments  Boolean     @default(false)
+
+  // İşleme
+  processedAt     DateTime?
+  errorMessage    String?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  attachments     EmailAttachment[]
+  orders          Order[]
+
+  @@map("emails")
+}
+
+// E-posta Ekleri
+model EmailAttachment {
+  id              String   @id @default(cuid())
+  emailId         String
+
+  filename        String   // "Approved Purchase Order_20251222032456345.xlsx"
+  mimeType        String   // "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  size            Int      // Byte cinsinden
+  filePath        String   // Kaydedilen dosya yolu
+
+  isParsed        Boolean  @default(false)
+  parseError      String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@map("email_attachments")
+}
+
+// E-posta Durumları
+enum EmailStatus {
+  UNPROCESSED     // İşlenmemiş
+  PROCESSING      // İşleniyor
+  PROCESSED       // İşlendi
+  FAILED          // Başarısız
+  IGNORED         // Yoksayıldı (sipariş maili değil)
+}
+
+// ============================================
+// LOG MODELLERİ
+// ============================================
+
+// Sipariş Logları
+model OrderLog {
+  id              String   @id @default(cuid())
+  orderId         String
+
+  action          String   // "LOGIN", "CUSTOMER_SELECT", "FORM_FILL", vs.
+  status          String   // "SUCCESS", "FAILED", "INFO"
+  message         String
+  details         Json?    // Ek detaylar
+
+  screenshotPath  String?  // Hata durumunda ekran görüntüsü
+
+  createdAt       DateTime @default(now())
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_logs")
+}
+
+// Sistem Logları
+model SystemLog {
+  id              String   @id @default(cuid())
+
+  level           LogLevel @default(INFO)
+  source          String   // "EMAIL_SERVICE", "ROBOT", "API"
+  action          String
+  message         String
+  details         Json?
+
+  createdAt       DateTime @default(now())
+
+  @@map("system_logs")
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+  FATAL
+}
+
+// ============================================
+// AYARLAR
+// ============================================
+
+model Setting {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String
+  description     String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("settings")
+}
