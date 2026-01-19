@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 250, 250, 250;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 text-white hover:bg-primary-700;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+  }
+
+  .btn-danger {
+    @apply bg-danger-500 text-white hover:bg-danger-600;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+  }
+
+  .badge {
+    @apply px-2 py-1 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-success-50 text-success-600;
+  }
+
+  .badge-warning {
+    @apply bg-warning-50 text-warning-600;
+  }
+
+  .badge-danger {
+    @apply bg-danger-50 text-danger-600;
+  }
+
+  .badge-primary {
+    @apply bg-primary-50 text-primary-600;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  .table-container {
+    @apply overflow-x-auto rounded-lg border border-gray-200;
+  }
+
+  .table {
+    @apply w-full text-sm text-left;
+  }
+
+  .table th {
+    @apply px-4 py-3 bg-gray-50 font-semibold text-gray-700 border-b;
+  }
+
+  .table td {
+    @apply px-4 py-3 border-b border-gray-100;
+  }
+
+  .table tr:hover {
+    @apply bg-gray-50;
+  }
+}
