@@ -45,11 +45,15 @@ class UserInDB(User):
     hashed_password: str
 
 
+# Pre-computed bcrypt hash for "DoruMake2025!"
+# Generated once to avoid runtime hashing issues
+ADMIN_PASSWORD_HASH = "$2b$12$Y/gpoXpmKB4Kj7tP/XiSYuH8u118O.slkfNo9/lA7ml.7md.bviXW"
+
 # Hardcoded admin user (can be extended to database later)
 ADMIN_USERS = {
     "admin": {
         "username": "admin",
-        "hashed_password": pwd_context.hash("DoruMake2025!"),
+        "hashed_password": ADMIN_PASSWORD_HASH,
         "disabled": False,
     }
 }
