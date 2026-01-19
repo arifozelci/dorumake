@@ -45,6 +45,8 @@ tenacity==8.2.3
 # API (for admin panel communication)
 fastapi==0.109.0
 uvicorn==0.27.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 
 # Scheduling
 apscheduler==3.10.4

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -10,8 +10,10 @@ import {
   Settings,
   Calendar,
   Building2,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { authService } from '@/lib/auth';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -25,6 +27,12 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    authService.logout();
+    router.push('/login');
+  };
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
@@ -60,12 +68,19 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Status */}
-      <div className="absolute bottom-0 w-64 p-4 border-t border-gray-200">
+      {/* Status & Logout */}
+      <div className="absolute bottom-0 w-64 p-4 border-t border-gray-200 space-y-3">
         <div className="flex items-center gap-2 text-sm">
           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
           <span className="text-gray-600">Sistem Aktif</span>
         </div>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 text-sm text-gray-600 hover:text-red-600 transition-colors w-full"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Çıkış Yap</span>
+        </button>
       </div>
     </aside>
   );

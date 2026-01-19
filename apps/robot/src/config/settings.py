@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # JWT Auth
+    jwt_secret_key: str = "DoruMake-JWT-Secret-Key-2025-Change-In-Production"
+
     # Sub-settings
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     email: EmailSettings = Field(default_factory=EmailSettings)

@@ -3,13 +3,22 @@ DoruMake API
 FastAPI application for admin panel communication
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from src.config import settings
+from src.api.auth import (
+    authenticate_user,
+    create_access_token,
+    get_current_active_user,
+    Token,
+    User,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+)
 
 # Create FastAPI app
 app = FastAPI(
@@ -89,7 +98,38 @@ class ManualOrderRequest(BaseModel):
 
 
 # ============================================
-# ENDPOINTS
+# AUTH ENDPOINTS
+# ============================================
+
+@app.post("/api/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login endpoint - returns JWT token"""
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }
+
+
+@app.get("/api/auth/me")
+async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
+    """Get current user info"""
+    return {"username": current_user.username}
+
+
+# ============================================
+# ENDPOINTS (Protected)
 # ============================================
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -109,7 +149,7 @@ async def health_check():
 
 
 @app.get("/api/stats", response_model=StatsResponse)
-async def get_stats():
+async def get_stats(current_user: User = Depends(get_current_active_user)):
     """Get dashboard statistics"""
     # TODO: Implement actual database queries
     return {
@@ -129,6 +169,7 @@ async def list_orders(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
     supplier: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
 ):
     """List orders with pagination and filters"""
     # TODO: Implement database query
@@ -141,14 +182,14 @@ async def list_orders(
 
 
 @app.get("/api/orders/{order_id}", response_model=OrderResponse)
-async def get_order(order_id: str):
+async def get_order(order_id: str, current_user: User = Depends(get_current_active_user)):
     """Get order details"""
     # TODO: Implement database query
     raise HTTPException(status_code=404, detail="Order not found")
 
 
 @app.post("/api/orders/{order_id}/retry")
-async def retry_order(order_id: str):
+async def retry_order(order_id: str, current_user: User = Depends(get_current_active_user)):
     """Retry failed order"""
     # TODO: Implement retry logic
     return {"status": "queued", "order_id": order_id}
@@ -159,6 +200,7 @@ async def list_emails(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
 ):
     """List processed emails"""
     # TODO: Implement database query
@@ -176,6 +218,7 @@ async def get_logs(
     page_size: int = Query(50, ge=1, le=200),
     level: Optional[str] = None,
     source: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get system logs"""
     # TODO: Implement database query
@@ -188,7 +231,7 @@ async def get_logs(
 
 
 @app.post("/api/orders/manual")
-async def create_manual_order(request: ManualOrderRequest):
+async def create_manual_order(request: ManualOrderRequest, current_user: User = Depends(get_current_active_user)):
     """Create and process order manually"""
     # TODO: Implement manual order creation
     return {
@@ -198,7 +241,7 @@ async def create_manual_order(request: ManualOrderRequest):
 
 
 @app.get("/api/suppliers")
-async def list_suppliers():
+async def list_suppliers(current_user: User = Depends(get_current_active_user)):
     """List configured suppliers"""
     return {
         "suppliers": [
@@ -219,7 +262,7 @@ async def list_suppliers():
 
 
 @app.get("/api/scheduler/jobs")
-async def get_scheduler_jobs():
+async def get_scheduler_jobs(current_user: User = Depends(get_current_active_user)):
     """Get scheduled jobs"""
     # TODO: Get from scheduler instance
     return {"jobs": []}

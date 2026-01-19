@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { authService } from './auth';
 
 // Use relative URL so requests go through the same origin (Nginx will proxy /api to backend)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -9,6 +10,29 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = authService.getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle 401 errors (redirect to login)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      authService.logout();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Types
 export interface HealthResponse {
