@@ -104,7 +104,9 @@ class ManualOrderRequest(BaseModel):
 @app.post("/api/auth/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """Login endpoint - returns JWT token"""
+    print(f"Login attempt - username: {form_data.username}, password length: {len(form_data.password)}")
     user = authenticate_user(form_data.username, form_data.password)
+    print(f"Authentication result: {user}")
     if not user:
         raise HTTPException(
             status_code=401,
