@@ -51,9 +51,9 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(f"{salt}{password}".encode('utf-8')).hexdigest()
 
 
-# Admin password: "DoruMake2025!"
-# Pre-computed hash to avoid encoding issues across systems
-ADMIN_PASSWORD_HASH = "1de29693cfb50f674868200722027f3a822d1de57ee505d99c2f770e01a8697d"
+# Admin password: "admin123"
+# Pre-computed hash (simple password without special characters)
+ADMIN_PASSWORD_HASH = "eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073"
 
 # Hardcoded admin user (can be extended to database later)
 ADMIN_USERS = {
