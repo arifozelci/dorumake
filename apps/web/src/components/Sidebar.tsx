@@ -15,6 +15,7 @@ import {
   FileEdit,
   Activity,
   ChevronRight,
+  Bell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { authService } from '@/lib/auth';
@@ -41,6 +42,7 @@ const managementNavItems: NavItem[] = [
 ];
 
 const systemNavItems: NavItem[] = [
+  { key: 'nav.notifications', href: '/notifications', icon: Bell },
   { key: 'nav.scheduler', href: '/scheduler', icon: Calendar },
   { key: 'nav.settings', href: '/settings', icon: Settings },
 ];

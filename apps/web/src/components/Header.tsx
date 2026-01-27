@@ -145,7 +145,13 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                   )}
                 </div>
                 <div className="p-3 border-t border-gray-100 bg-gray-50">
-                  <button className="w-full text-sm text-primary-600 hover:text-primary-700 font-medium">
+                  <button
+                    onClick={() => {
+                      setShowNotifications(false);
+                      router.push('/notifications');
+                    }}
+                    className="w-full text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  >
                     Tüm bildirimleri gör
                   </button>
                 </div>
