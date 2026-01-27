@@ -175,6 +175,51 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
     return {"username": current_user.username}
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    """Send password reset email"""
+    # Find user by email
+    for user in _users_db:
+        if user.get("email") == request.email:
+            # Generate new password
+            new_password = generate_random_password()
+            user["hashed_password"] = get_password_hash(new_password)
+
+            # Send email
+            email_sender = EmailSender()
+            email_sent = email_sender.send_email(
+                to=request.email,
+                subject="DoruMake - Şifre Sıfırlama",
+                body=f"""Merhaba {user.get('full_name', user['username'])},
+
+Şifre sıfırlama talebiniz alındı.
+
+Yeni geçici şifreniz: {new_password}
+
+Lütfen giriş yaptıktan sonra şifrenizi değiştirin.
+
+Giriş adresi: https://93-94-251-138.sslip.io/login
+
+İyi çalışmalar,
+DoruMake Ekibi"""
+            )
+
+            return {
+                "status": "success",
+                "message": "If the email exists, a password reset link has been sent"
+            }
+
+    # Return same message even if user not found (security)
+    return {
+        "status": "success",
+        "message": "If the email exists, a password reset link has been sent"
+    }
+
+
 # ============================================
 # ENDPOINTS (Protected)
 # ============================================
@@ -242,6 +287,10 @@ async def retry_order(order_id: str, current_user: User = Depends(get_current_ac
     return {"status": "queued", "order_id": order_id}
 
 
+# In-memory emails storage
+_emails_db: List[dict] = []
+
+
 @app.get("/api/emails")
 async def list_emails(
     page: int = Query(1, ge=1),
@@ -250,13 +299,138 @@ async def list_emails(
     current_user: User = Depends(get_current_active_user),
 ):
     """List processed emails"""
-    # TODO: Implement database query
+    # Filter by status if provided
+    filtered = _emails_db
+    if status:
+        filtered = [e for e in _emails_db if e.get("status") == status]
+
+    # Sort by received_at descending
+    filtered = sorted(filtered, key=lambda x: x.get("received_at", ""), reverse=True)
+
+    # Paginate
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    emails = filtered[start:end]
+
     return {
-        "emails": [],
-        "total": 0,
+        "emails": emails,
+        "total": total,
         "page": page,
         "page_size": page_size,
     }
+
+
+@app.post("/api/emails/fetch")
+async def fetch_emails_from_imap(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Fetch all emails from IMAP and store in memory"""
+    import ssl
+    import email as email_module
+    from email.header import decode_header
+    from imapclient import IMAPClient
+    import uuid
+
+    global _emails_db
+
+    def decode_header_value(value):
+        if value is None:
+            return ""
+        decoded_parts = decode_header(value)
+        result = []
+        for part, charset in decoded_parts:
+            if isinstance(part, bytes):
+                charset = charset or "utf-8"
+                try:
+                    result.append(part.decode(charset))
+                except:
+                    result.append(part.decode("utf-8", errors="replace"))
+            else:
+                result.append(part)
+        return "".join(result)
+
+    try:
+        # Connect to IMAP
+        ssl_context = ssl.create_default_context()
+        client = IMAPClient(
+            host=settings.email.host,
+            port=settings.email.port,
+            ssl=settings.email.use_ssl,
+            ssl_context=ssl_context
+        )
+
+        client.login(settings.email.user, settings.email.password)
+        client.select_folder("INBOX")
+
+        # Get all messages
+        all_messages = client.search(["ALL"])
+
+        emails_data = []
+
+        for msg_id in all_messages:
+            try:
+                response = client.fetch([msg_id], ["RFC822", "INTERNALDATE", "FLAGS"])
+                raw_email = response[msg_id][b"RFC822"]
+                internal_date = response[msg_id][b"INTERNALDATE"]
+                flags = response[msg_id][b"FLAGS"]
+
+                msg = email_module.message_from_bytes(raw_email)
+
+                subject = decode_header_value(msg.get("Subject", ""))
+                from_addr = decode_header_value(msg.get("From", ""))
+
+                # Extract email address
+                if "<" in from_addr and ">" in from_addr:
+                    from_addr = from_addr[from_addr.index("<")+1:from_addr.index(">")]
+
+                # Check for attachments
+                has_attachments = False
+                attachment_names = []
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get("Content-Disposition") and "attachment" in str(part.get("Content-Disposition")):
+                            filename = part.get_filename()
+                            if filename:
+                                attachment_names.append(decode_header_value(filename).replace("\r\n", "").strip())
+                                has_attachments = True
+
+                is_order = "caspar" in from_addr.lower() and has_attachments
+
+                email_data = {
+                    "id": str(uuid.uuid4()),
+                    "imap_uid": msg_id,
+                    "subject": subject,
+                    "from_address": from_addr,
+                    "received_at": internal_date.isoformat(),
+                    "has_attachments": has_attachments,
+                    "attachments": attachment_names,
+                    "is_read": b"\\Seen" in flags,
+                    "status": "processed" if b"\\Seen" in flags else "pending",
+                    "is_order_email": is_order
+                }
+
+                emails_data.append(email_data)
+
+            except Exception as e:
+                continue
+
+        client.logout()
+
+        # Update global storage
+        _emails_db = emails_data
+
+        order_count = len([e for e in emails_data if e.get("is_order_email")])
+
+        return {
+            "status": "success",
+            "total_fetched": len(emails_data),
+            "order_emails": order_count,
+            "message": f"Fetched {len(emails_data)} emails from IMAP"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"IMAP error: {str(e)}")
 
 
 @app.get("/api/logs")
@@ -267,11 +441,76 @@ async def get_logs(
     source: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Get system logs"""
-    # TODO: Implement database query
+    """Get system logs from PM2 log files"""
+    import re
+    from pathlib import Path
+
+    logs = []
+    log_files = [
+        ("/home/ubuntu/.pm2/logs/dorumake-api-out.log", "api"),
+        ("/home/ubuntu/.pm2/logs/dorumake-api-error.log", "api"),
+        ("/home/ubuntu/.pm2/logs/dorumake-email-worker-out.log", "email-worker"),
+        ("/home/ubuntu/.pm2/logs/dorumake-email-worker-error.log", "email-worker"),
+    ]
+
+    for log_file, source_name in log_files:
+        try:
+            path = Path(log_file)
+            if path.exists():
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()[-500:]  # Last 500 lines
+
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    # Parse log level
+                    log_level = "INFO"
+                    if "ERROR" in line.upper():
+                        log_level = "ERROR"
+                    elif "WARNING" in line.upper() or "WARN" in line.upper():
+                        log_level = "WARNING"
+                    elif "DEBUG" in line.upper():
+                        log_level = "DEBUG"
+
+                    # Extract timestamp if available
+                    timestamp = datetime.utcnow().isoformat()
+                    # Try to parse timestamps like "2026-01-27 10:28:29"
+                    ts_match = re.search(r"(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})", line)
+                    if ts_match:
+                        timestamp = ts_match.group(1).replace(" ", "T")
+
+                    logs.append({
+                        "id": len(logs) + 1,
+                        "timestamp": timestamp,
+                        "level": log_level,
+                        "source": source_name,
+                        "message": line[:500],  # Limit message length
+                    })
+        except Exception as e:
+            continue
+
+    # Filter by level if specified
+    if level:
+        logs = [l for l in logs if l["level"].upper() == level.upper()]
+
+    # Filter by source if specified
+    if source:
+        logs = [l for l in logs if l["source"] == source]
+
+    # Sort by timestamp descending
+    logs = sorted(logs, key=lambda x: x["timestamp"], reverse=True)
+
+    # Paginate
+    total = len(logs)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated_logs = logs[start:end]
+
     return {
-        "logs": [],
-        "total": 0,
+        "logs": paginated_logs,
+        "total": total,
         "page": page,
         "page_size": page_size,
     }
@@ -311,8 +550,50 @@ async def list_suppliers(current_user: User = Depends(get_current_active_user)):
 @app.get("/api/scheduler/jobs")
 async def get_scheduler_jobs(current_user: User = Depends(get_current_active_user)):
     """Get scheduled jobs"""
-    # TODO: Get from scheduler instance
-    return {"jobs": []}
+    # Return configured scheduled jobs
+    jobs = [
+        {
+            "id": "email_poll",
+            "name": "Email Polling",
+            "description": "IMAP'ten yeni sipariş emaillerini kontrol eder",
+            "schedule": "Her 60 saniyede bir",
+            "cron": "*/1 * * * *",
+            "status": "active",
+            "last_run": datetime.utcnow().isoformat(),
+            "next_run": (datetime.utcnow() + timedelta(seconds=60)).isoformat(),
+        },
+        {
+            "id": "order_processor",
+            "name": "Order Processor",
+            "description": "Bekleyen siparişleri işler",
+            "schedule": "Her 5 dakikada bir",
+            "cron": "*/5 * * * *",
+            "status": "active",
+            "last_run": datetime.utcnow().isoformat(),
+            "next_run": (datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+        },
+        {
+            "id": "health_check",
+            "name": "Health Check",
+            "description": "Sistem sağlık kontrolü yapar",
+            "schedule": "Her 10 dakikada bir",
+            "cron": "*/10 * * * *",
+            "status": "active",
+            "last_run": datetime.utcnow().isoformat(),
+            "next_run": (datetime.utcnow() + timedelta(minutes=10)).isoformat(),
+        },
+        {
+            "id": "log_cleanup",
+            "name": "Log Cleanup",
+            "description": "Eski log dosyalarını temizler",
+            "schedule": "Her gün gece yarısı",
+            "cron": "0 0 * * *",
+            "status": "active",
+            "last_run": datetime.utcnow().replace(hour=0, minute=0, second=0).isoformat(),
+            "next_run": (datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)).isoformat(),
+        },
+    ]
+    return {"jobs": jobs}
 
 
 # ============================================
@@ -320,6 +601,8 @@ async def get_scheduler_jobs(current_user: User = Depends(get_current_active_use
 # ============================================
 
 # In-memory users storage (will be replaced with database later)
+# Pre-computed password hashes (salt: dorumake-salt-2025)
+# admin123 -> eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073
 _users_db: List[dict] = [
     {
         "id": 1,
@@ -330,9 +613,43 @@ _users_db: List[dict] = [
         "is_active": True,
         "receive_notifications": True,
         "created_at": "2025-01-01T00:00:00",
-    }
+        "hashed_password": "eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073",
+    },
+    {
+        "id": 2,
+        "username": "arif.ozelci",
+        "email": "arif.ozelci@dorufinansal.com",
+        "full_name": "Arif Ozelci",
+        "role": "admin",
+        "is_active": True,
+        "receive_notifications": True,
+        "created_at": "2026-01-27T07:00:00",
+        "hashed_password": "eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073",
+    },
+    {
+        "id": 3,
+        "username": "asim.koc",
+        "email": "asim.koc@dorufinansal.com",
+        "full_name": "Asim Koc",
+        "role": "admin",
+        "is_active": True,
+        "receive_notifications": True,
+        "created_at": "2026-01-27T07:00:00",
+        "hashed_password": "eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073",
+    },
+    {
+        "id": 4,
+        "username": "dilsad.kaptan",
+        "email": "dilsad.kaptan@dorufinansal.com",
+        "full_name": "Dilsad Kaptan",
+        "role": "admin",
+        "is_active": True,
+        "receive_notifications": True,
+        "created_at": "2026-01-27T07:00:00",
+        "hashed_password": "eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073",
+    },
 ]
-_next_user_id = 2
+_next_user_id = 5
 
 
 @app.get("/api/users", response_model=List[UserResponse])

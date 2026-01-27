@@ -29,11 +29,16 @@ class DatabaseSettings(BaseSettings):
 
 class EmailSettings(BaseSettings):
     """Email (IMAP) settings"""
-    model_config = SettingsConfigDict(env_prefix="EMAIL_")
+    model_config = SettingsConfigDict(
+        env_prefix="EMAIL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     host: str = "imap.gmail.com"
     port: int = 993
-    user: str = "info@dorufinansal.com"
+    user: str = ""
     password: str = ""
     use_ssl: bool = True
     poll_interval: int = 60  # seconds
