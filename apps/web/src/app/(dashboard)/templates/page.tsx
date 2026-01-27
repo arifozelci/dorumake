@@ -49,7 +49,7 @@ export default function TemplatesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       setEditingTemplate(null);
-      alert('Sablon guncellendi');
+      alert('Şablon güncellendi');
     }
   });
 
@@ -64,17 +64,17 @@ export default function TemplatesPage() {
   };
 
   const templateLabels: Record<string, string> = {
-    'new_user': 'Yeni Kullanici',
-    'password_reset': 'Sifre Sifirlama',
-    'password_changed': 'Sifre Degisikligi',
-    'order_error': 'Siparis Hatasi',
-    'order_completed': 'Siparis Tamamlandi',
-    'system_alert': 'Sistem Uyarisi'
+    'new_user': 'Yeni Kullanıcı',
+    'password_reset': 'Şifre Sıfırlama',
+    'password_changed': 'Şifre Değişikliği',
+    'order_error': 'Sipariş Hatası',
+    'order_completed': 'Sipariş Tamamlandı',
+    'system_alert': 'Sistem Uyarısı'
   };
 
   return (
     <div>
-      <Header title="E-posta Sablonlari" subtitle="Bildirim e-posta sablonlarini yonetin" />
+      <Header title="E-posta Şablonları" subtitle="Bildirim e-posta şablonlarını yönetin" />
 
       <div className="p-6">
         <div className="flex justify-between mb-6">
@@ -87,11 +87,11 @@ export default function TemplatesPage() {
           <div className="card p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-semibold">
-                Sablon Duzenle: {templateLabels[editingTemplate.name] || editingTemplate.name}
+                Şablon Düzenle: {templateLabels[editingTemplate.name] || editingTemplate.name}
               </h2>
               <div className="flex gap-2">
                 <button onClick={() => setEditingTemplate(null)} className="btn btn-secondary">
-                  <X className="w-4 h-4 mr-2" /> Iptal
+                  <X className="w-4 h-4 mr-2" /> İptal
                 </button>
                 <button onClick={handleSave} className="btn btn-primary">
                   <Save className="w-4 h-4 mr-2" /> Kaydet
@@ -110,7 +110,7 @@ export default function TemplatesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Aciklama</label>
+                <label className="block text-sm font-medium mb-1">Açıklama</label>
                 <input
                   type="text"
                   className="input w-full"
@@ -119,7 +119,7 @@ export default function TemplatesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Icerik</label>
+                <label className="block text-sm font-medium mb-1">İçerik</label>
                 <textarea
                   className="input w-full h-64 font-mono text-sm"
                   value={formData.body}
@@ -127,7 +127,7 @@ export default function TemplatesPage() {
                 />
               </div>
               <div className="bg-gray-50 p-4 rounded">
-                <p className="text-sm font-medium mb-2">Kullanilabilir Degiskenler:</p>
+                <p className="text-sm font-medium mb-2">Kullanılabilir Değişkenler:</p>
                 <div className="flex flex-wrap gap-2">
                   {editingTemplate.variables.map((v) => (
                     <code key={v} className="bg-gray-200 px-2 py-1 rounded text-sm">{'{' + v + '}'}</code>
@@ -139,7 +139,7 @@ export default function TemplatesPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {isLoading ? (
-              <div className="col-span-2 text-center py-8 text-gray-500">Yukleniyor...</div>
+              <div className="col-span-2 text-center py-8 text-gray-500">Yükleniyor...</div>
             ) : templates?.map((template) => (
               <div key={template.id} className="card p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between">
@@ -161,7 +161,7 @@ export default function TemplatesPage() {
                     <strong>Konu:</strong> {template.subject}
                   </p>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-400">Son guncelleme: {formatDate(template.updated_at)}</span>
+                    <span className="text-xs text-gray-400">Son güncelleme: {formatDate(template.updated_at)}</span>
                     {template.is_active ? (
                       <span className="flex items-center gap-1 text-xs text-success-600"><Check className="w-3 h-3" /> Aktif</span>
                     ) : (

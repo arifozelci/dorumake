@@ -4,3 +4,4 @@ export { StatsCard } from './StatsCard';
 export { DataTable } from './DataTable';
 export { StatusBadge } from './StatusBadge';
 export { AuthGuard } from './AuthGuard';
+export { LanguageSwitcher } from './LanguageSwitcher';

@@ -6,6 +6,9 @@ Parses email content to extract supplier and order information
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from enum import Enum
+from io import BytesIO
+
+import openpyxl
 
 from src.utils.logger import email_logger
 
@@ -46,6 +49,28 @@ class EmailParser:
             r'ya[ğg]\s*filtre',
             r'air\s*filter',
             r'oil\s*filter',
+        ]
+    }
+
+    # Caspar email patterns (source system)
+    CASPAR_SENDER_PATTERNS = [
+        r'caspar',
+        r'info@caspar\.com\.tr',
+        r'approved\s*purchase\s*order',
+    ]
+
+    # Excel-based supplier detection (Brand/Manufacturer columns)
+    EXCEL_SUPPLIER_PATTERNS = {
+        SupplierType.MANN_HUMMEL: [
+            r'mann',
+            r'hummel',
+            r'filtron',
+        ],
+        SupplierType.MUTLU_AKU: [
+            r'mutlu',
+            r'efb',
+            r'start.stop',
+            r'ak[üu]',
         ]
     }
 
@@ -127,6 +152,67 @@ class EmailParser:
         email_logger.debug(f"Supplier detection: {best_supplier.value} (confidence: {confidence:.2f})")
 
         return best_supplier, confidence
+
+    def is_caspar_email(self, sender: str, subject: str) -> bool:
+        """Check if email is from Caspar system"""
+        combined = f"{sender} {subject}".lower()
+        for pattern in self.CASPAR_SENDER_PATTERNS:
+            if re.search(pattern, combined, re.IGNORECASE):
+                return True
+        return False
+
+    def detect_supplier_from_excel(self, excel_data: bytes) -> Tuple[SupplierType, float]:
+        """
+        Detect supplier from Excel attachment content
+
+        Looks at Brand and Manufacturer columns to determine supplier
+        """
+        try:
+            wb = openpyxl.load_workbook(BytesIO(excel_data))
+            sheet = wb.active
+
+            supplier_counts = {SupplierType.MANN_HUMMEL: 0, SupplierType.MUTLU_AKU: 0}
+
+            # Find header row and column indices
+            brand_col = None
+            manufacturer_col = None
+
+            for i, row in enumerate(sheet.iter_rows(values_only=True)):
+                if row and any('Brand' in str(cell) for cell in row if cell):
+                    for j, cell in enumerate(row):
+                        if cell and 'Brand' in str(cell):
+                            brand_col = j
+                        if cell and 'Manufacturer' in str(cell):
+                            manufacturer_col = j
+                    continue
+
+                # Check brand/manufacturer values
+                if brand_col is not None or manufacturer_col is not None:
+                    brand_val = str(row[brand_col] or '').lower() if brand_col and brand_col < len(row) else ''
+                    mfr_val = str(row[manufacturer_col] or '').lower() if manufacturer_col and manufacturer_col < len(row) else ''
+                    combined = f'{brand_val} {mfr_val}'
+
+                    for supplier, patterns in self.EXCEL_SUPPLIER_PATTERNS.items():
+                        for pattern in patterns:
+                            if re.search(pattern, combined, re.IGNORECASE):
+                                supplier_counts[supplier] += 1
+
+            # Determine supplier
+            best_supplier = max(supplier_counts, key=supplier_counts.get)
+            best_count = supplier_counts[best_supplier]
+
+            if best_count == 0:
+                return SupplierType.UNKNOWN, 0.0
+
+            total = sum(supplier_counts.values())
+            confidence = best_count / total if total > 0 else 0.0
+
+            email_logger.info(f"Excel supplier detection: {best_supplier.value} (confidence: {confidence:.2f}, count: {best_count})")
+            return best_supplier, confidence
+
+        except Exception as e:
+            email_logger.error(f"Error parsing Excel for supplier: {e}")
+            return SupplierType.UNKNOWN, 0.0
 
     def extract_customer_codes(
         self,
@@ -220,8 +306,24 @@ class EmailParser:
             body = re.sub(r'<[^>]+>', ' ', body_html)
             body = re.sub(r'\s+', ' ', body).strip()
 
-        # Detect supplier
-        supplier, confidence = self.detect_supplier(subject, body, attachments)
+        from_address = email_data.get('from_address', '')
+
+        # Check if this is a Caspar email - needs Excel parsing for supplier
+        if self.is_caspar_email(from_address, subject):
+            email_logger.info(f"Detected Caspar email, will use Excel content for supplier detection")
+            # Try to detect supplier from Excel attachments
+            supplier = SupplierType.UNKNOWN
+            confidence = 0.0
+            for att in attachments:
+                if att.get('filename', '').lower().endswith(('.xlsx', '.xls')):
+                    excel_data = att.get('data')
+                    if excel_data:
+                        supplier, confidence = self.detect_supplier_from_excel(excel_data)
+                        if supplier != SupplierType.UNKNOWN:
+                            break
+        else:
+            # Detect supplier from email content
+            supplier, confidence = self.detect_supplier(subject, body, attachments)
 
         # Extract codes and numbers
         customer_codes = self.extract_customer_codes(subject, body)

@@ -57,7 +57,7 @@ export default function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowModal(false);
       resetForm();
-      alert('Kullanici olusturuldu ve e-posta gonderildi');
+      alert('Kullanıcı oluşturuldu ve e-posta gönderildi');
     }
   });
 
@@ -103,7 +103,7 @@ export default function UsersPage() {
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
-    onSuccess: () => alert('Sifre sifirlandi ve e-posta gonderildi')
+    onSuccess: () => alert('Şifre sıfırlandı ve e-posta gönderildi')
   });
 
   const resetForm = () => setFormData({ username: '', email: '', password: '', full_name: '', role: 'user' });
@@ -125,14 +125,14 @@ export default function UsersPage() {
 
   return (
     <div>
-      <Header title="Kullanici Yonetimi" subtitle="Sistem kullanicilarini yonetin" />
+      <Header title="Kullanıcı Yönetimi" subtitle="Sistem kullanıcılarını yönetin" />
       <div className="p-6">
         <div className="flex justify-between mb-6">
           <button onClick={() => refetch()} className="btn btn-secondary">
             <RefreshCw className="w-4 h-4 mr-2" /> Yenile
           </button>
           <button onClick={() => { resetForm(); setEditingUser(null); setShowModal(true); }} className="btn btn-primary">
-            <Plus className="w-4 h-4 mr-2" /> Yeni Kullanici
+            <Plus className="w-4 h-4 mr-2" /> Yeni Kullanıcı
           </button>
         </div>
 
@@ -140,18 +140,18 @@ export default function UsersPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b bg-gray-50">
-                <th className="text-left p-4">Kullanici</th>
+                <th className="text-left p-4">Kullanıcı</th>
                 <th className="text-left p-4">E-posta</th>
                 <th className="text-left p-4">Rol</th>
                 <th className="text-left p-4">Durum</th>
                 <th className="text-left p-4">Bildirim</th>
-                <th className="text-left p-4">Olusturulma</th>
-                <th className="text-right p-4">Islemler</th>
+                <th className="text-left p-4">Oluşturulma</th>
+                <th className="text-right p-4">İşlemler</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Yukleniyor...</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Yükleniyor...</td></tr>
               ) : users?.map((user) => (
                 <tr key={user.id} className="border-b hover:bg-gray-50">
                   <td className="p-4">
@@ -168,7 +168,7 @@ export default function UsersPage() {
                   <td className="p-4 text-gray-600">{user.email}</td>
                   <td className="p-4">
                     <span className={user.role === 'admin' ? 'badge badge-primary' : 'badge badge-secondary'}>
-                      {user.role === 'admin' ? 'Admin' : 'Kullanici'}
+                      {user.role === 'admin' ? 'Admin' : 'Kullanıcı'}
                     </span>
                   </td>
                   <td className="p-4">
@@ -184,14 +184,14 @@ export default function UsersPage() {
                   <td className="p-4 text-sm text-gray-500">{formatDate(user.created_at)}</td>
                   <td className="p-4">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openEditModal(user)} className="p-2 hover:bg-gray-100 rounded" title="Duzenle">
+                      <button onClick={() => openEditModal(user)} className="p-2 hover:bg-gray-100 rounded" title="Düzenle">
                         <Edit2 className="w-4 h-4 text-gray-600" />
                       </button>
-                      <button onClick={() => resetPassword.mutate(user.id)} className="p-2 hover:bg-gray-100 rounded" title="Sifre Sifirla">
+                      <button onClick={() => resetPassword.mutate(user.id)} className="p-2 hover:bg-gray-100 rounded" title="Şifre Sıfırla">
                         <Key className="w-4 h-4 text-warning-600" />
                       </button>
                       {user.username !== 'admin' && (
-                        <button onClick={() => { if (confirm('Bu kullaniciyi silmek istediginize emin misiniz?')) deleteUser.mutate(user.id); }} className="p-2 hover:bg-gray-100 rounded" title="Sil">
+                        <button onClick={() => { if (confirm('Bu kullanıcıyı silmek istediğinize emin misiniz?')) deleteUser.mutate(user.id); }} className="p-2 hover:bg-gray-100 rounded" title="Sil">
                           <Trash2 className="w-4 h-4 text-danger-600" />
                         </button>
                       )}
@@ -207,12 +207,12 @@ export default function UsersPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">{editingUser ? 'Kullanici Duzenle' : 'Yeni Kullanici'}</h2>
+            <h2 className="text-xl font-semibold mb-4">{editingUser ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
                 {!editingUser && (
                   <div>
-                    <label className="block text-sm font-medium mb-1">Kullanici Adi</label>
+                    <label className="block text-sm font-medium mb-1">Kullanıcı Adı</label>
                     <input type="text" className="input w-full" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} required />
                   </div>
                 )}
@@ -226,21 +226,21 @@ export default function UsersPage() {
                 </div>
                 {!editingUser && (
                   <div>
-                    <label className="block text-sm font-medium mb-1">Sifre (bos birakilirsa otomatik)</label>
+                    <label className="block text-sm font-medium mb-1">Şifre (boş bırakılırsa otomatik)</label>
                     <input type="password" className="input w-full" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
                   </div>
                 )}
                 <div>
                   <label className="block text-sm font-medium mb-1">Rol</label>
                   <select className="input w-full" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
-                    <option value="user">Kullanici</option>
+                    <option value="user">Kullanıcı</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
-                <button type="button" onClick={() => { setShowModal(false); setEditingUser(null); resetForm(); }} className="btn btn-secondary">Iptal</button>
-                <button type="submit" className="btn btn-primary">{editingUser ? 'Guncelle' : 'Olustur'}</button>
+                <button type="button" onClick={() => { setShowModal(false); setEditingUser(null); resetForm(); }} className="btn btn-secondary">İptal</button>
+                <button type="submit" className="btn btn-primary">{editingUser ? 'Güncelle' : 'Oluştur'}</button>
               </div>
             </form>
           </div>

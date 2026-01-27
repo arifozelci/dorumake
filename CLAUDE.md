@@ -75,11 +75,35 @@ DoruMake, Castrol bayileri için tedarikçi portallarına otomatik sipariş giri
 
 | Bilgi | Değer |
 |-------|-------|
-| **E-posta** | info@dorufinansal.com |
-| **Şifre** | D$602581681712aq |
+| **E-posta** | dorumakerobot@gmail.com |
+| **App Password** | mskfwezpwamducxw |
 | **Protokol** | IMAP |
+| **IMAP Host** | imap.gmail.com:993 |
 
-Sipariş mailleri bu adrese gelir. Excel eki içerir.
+Sipariş mailleri bu adrese gelir. Caspar sistemi (info@caspar.com.tr) Excel eki gönderir.
+
+---
+
+## Veritabanı Bilgileri
+
+| Bilgi | Değer |
+|-------|-------|
+| **Tip** | SQL Server 2019 (Docker) |
+| **Container** | sqlserver |
+| **Port** | 1433 |
+| **Kullanıcı** | sa |
+| **Şifre** | KolayAlacak2025 |
+| **Database** | DoruMake |
+
+---
+
+## Admin Panel Bilgileri
+
+| Bilgi | Değer |
+|-------|-------|
+| **URL** | https://93-94-251-138.sslip.io |
+| **Kullanıcı** | admin |
+| **Şifre** | YkcBqTFO6qBKLeiC |
 
 ---
 
@@ -116,11 +140,11 @@ Sipariş mailleri bu adrese gelir. Excel eki içerir.
 │          └────────────────────┼────────────────────┘                         │
 │                               │                                              │
 │  ┌────────────────────────────▼────────────────────────────────┐            │
-│  │                        MySQL                                 │            │
-│  │  - orders, order_items, order_logs                          │            │
-│  │  - emails, email_attachments                                │            │
-│  │  - suppliers, customers, products                           │            │
-│  │  - system_logs, settings                                    │            │
+│  │                   SQL Server (Docker)                        │            │
+│  │  - orders, order_items                                      │            │
+│  │  - emails                                                   │            │
+│  │  - suppliers                                                │            │
+│  │  - system_logs                                              │            │
 │  └─────────────────────────────────────────────────────────────┘            │
 │                                                                              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐              │
@@ -341,8 +365,8 @@ NOTIFICATIONS = {
            └─────────────────┼─────────────────┘
                              │
                     ┌────────▼────────┐
-                    │   PostgreSQL    │
-                    │   (Shared)      │
+                    │   SQL Server    │
+                    │   (Docker)      │
                     └─────────────────┘
 ```
 
@@ -423,24 +447,24 @@ HEALTH_CHECKS = {
 
 ## Linux Deployment
 
-### Systemd Service
+### PM2 Services
 
-```ini
-# /etc/systemd/system/dorumake-robot.service
-[Unit]
-Description=DoruMake Order Robot
-After=network.target postgresql.service
+```bash
+# Çalışan servisler
+pm2 status
 
-[Service]
-Type=simple
-User=dorumake
-WorkingDirectory=/opt/dorumake/apps/robot
-ExecStart=/opt/dorumake/venv/bin/python main.py
-Restart=always
-RestartSec=10
+# Servisler:
+# - dorumake-web         (Next.js Admin Panel - Port 3000)
+# - dorumake-api         (FastAPI Backend - Port 8000)
+# - dorumake-email-worker (Email Polling Worker)
 
-[Install]
-WantedBy=multi-user.target
+# Yeniden başlatma
+pm2 restart dorumake-web
+pm2 restart dorumake-api
+pm2 restart dorumake-email-worker
+
+# Logları görme
+pm2 logs dorumake-api --lines 50
 ```
 
 ### Logrotate
