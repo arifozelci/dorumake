@@ -82,7 +82,12 @@ class RetrySettings(BaseSettings):
 
 class NotificationSettings(BaseSettings):
     """Notification settings"""
-    model_config = SettingsConfigDict(env_prefix="NOTIFY_")
+    model_config = SettingsConfigDict(
+        env_prefix="NOTIFY_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     enabled: bool = True
     smtp_host: str = "smtp.gmail.com"
