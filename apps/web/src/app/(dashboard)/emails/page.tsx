@@ -7,17 +7,11 @@ import { formatDate, truncate } from '@/lib/utils';
 import { RefreshCw, Filter, Paperclip, Mail as MailIcon, X, FileSpreadsheet, Download, Eye } from 'lucide-react';
 import type { Email } from '@/lib/api';
 
-interface EmailWithAttachments extends Email {
-  attachments?: string[];
-  body_text?: string;
-  is_order_email?: boolean;
-}
-
 function EmailDetailModal({
   email,
   onClose
 }: {
-  email: EmailWithAttachments | null;
+  email: Email | null;
   onClose: () => void;
 }) {
   if (!email) return null;
@@ -143,7 +137,7 @@ function EmailDetailModal({
 export default function EmailsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [selectedEmail, setSelectedEmail] = useState<EmailWithAttachments | null>(null);
+  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const pageSize = 20;
 
   const { data, isLoading, refetch } = useEmails({
@@ -156,7 +150,7 @@ export default function EmailsPage() {
     {
       key: 'subject',
       header: 'Konu',
-      render: (email: EmailWithAttachments) => (
+      render: (email: Email) => (
         <div className="flex items-center gap-2">
           <MailIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <span className="font-medium text-gray-900" title={email.subject}>
@@ -174,26 +168,26 @@ export default function EmailsPage() {
     {
       key: 'from_address',
       header: 'Gönderen',
-      render: (email: EmailWithAttachments) => (
+      render: (email: Email) => (
         <span className="text-gray-600">{truncate(email.from_address, 30)}</span>
       ),
     },
     {
       key: 'status',
       header: 'Durum',
-      render: (email: EmailWithAttachments) => <StatusBadge status={email.status} />,
+      render: (email: Email) => <StatusBadge status={email.status} />,
     },
     {
       key: 'received_at',
       header: 'Alınma Tarihi',
-      render: (email: EmailWithAttachments) => (
+      render: (email: Email) => (
         <span className="text-gray-500 text-sm">{formatDate(email.received_at)}</span>
       ),
     },
     {
       key: 'actions',
       header: '',
-      render: (email: EmailWithAttachments) => (
+      render: (email: Email) => (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -272,7 +266,7 @@ export default function EmailsPage() {
             onPageChange={setPage}
             isLoading={isLoading}
             emptyMessage="E-posta bulunamadı"
-            onRowClick={(email: EmailWithAttachments) => setSelectedEmail(email)}
+            onRowClick={(email: Email) => setSelectedEmail(email)}
           />
         </div>
       </div>

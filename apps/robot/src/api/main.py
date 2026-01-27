@@ -478,16 +478,41 @@ async def fetch_emails_from_imap(
                 if "<" in from_addr and ">" in from_addr:
                     from_addr = from_addr[from_addr.index("<")+1:from_addr.index(">")]
 
-                # Check for attachments
+                # Check for attachments and extract body text
                 has_attachments = False
                 attachment_names = []
+                body_text = ""
+
                 if msg.is_multipart():
                     for part in msg.walk():
-                        if part.get("Content-Disposition") and "attachment" in str(part.get("Content-Disposition")):
+                        content_type = part.get_content_type()
+                        content_disposition = str(part.get("Content-Disposition", ""))
+
+                        # Extract attachments
+                        if "attachment" in content_disposition:
                             filename = part.get_filename()
                             if filename:
                                 attachment_names.append(decode_header_value(filename).replace("\r\n", "").strip())
                                 has_attachments = True
+                        # Extract body text
+                        elif content_type == "text/plain" and not body_text:
+                            try:
+                                charset = part.get_content_charset() or "utf-8"
+                                body_text = part.get_payload(decode=True).decode(charset, errors="replace")
+                                # Limit body text length
+                                if len(body_text) > 2000:
+                                    body_text = body_text[:2000] + "..."
+                            except:
+                                pass
+                else:
+                    # Single part message
+                    try:
+                        charset = msg.get_content_charset() or "utf-8"
+                        body_text = msg.get_payload(decode=True).decode(charset, errors="replace")
+                        if len(body_text) > 2000:
+                            body_text = body_text[:2000] + "..."
+                    except:
+                        pass
 
                 is_order = "caspar" in from_addr.lower() and has_attachments
 
@@ -498,7 +523,9 @@ async def fetch_emails_from_imap(
                     "from_address": from_addr,
                     "received_at": internal_date.isoformat(),
                     "has_attachments": has_attachments,
+                    "attachment_count": len(attachment_names),
                     "attachments": attachment_names,
+                    "body_text": body_text,
                     "is_read": b"\\Seen" in flags,
                     "status": "processed" if b"\\Seen" in flags else "pending",
                     "is_order_email": is_order

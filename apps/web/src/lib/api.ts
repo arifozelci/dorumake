@@ -80,6 +80,9 @@ export interface Email {
   status: string;
   has_attachments: boolean;
   attachment_count: number;
+  attachments?: string[];
+  body_text?: string;
+  is_order_email?: boolean;
 }
 
 export interface EmailListResponse {
