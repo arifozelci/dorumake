@@ -1029,6 +1029,149 @@ async def update_template(
     raise HTTPException(status_code=404, detail="Template not found")
 
 
+# ============================================
+# NOTIFICATION ENDPOINTS
+# ============================================
+
+class NotificationRequest(BaseModel):
+    template_name: str
+    params: dict
+
+
+class OrderErrorNotificationRequest(BaseModel):
+    order_code: str
+    supplier: str
+    error_message: str
+
+
+class OrderCompletedNotificationRequest(BaseModel):
+    order_code: str
+    supplier: str
+    item_count: int
+
+
+class SystemAlertNotificationRequest(BaseModel):
+    level: str  # warning, error, critical
+    message: str
+
+
+def _send_notification_to_all_users(template_name: str, params: dict) -> dict:
+    """Send notification to all users with receive_notifications enabled"""
+    # Find template
+    template = None
+    for t in _templates_db:
+        if t["name"] == template_name:
+            template = t
+            break
+
+    if not template:
+        return {"success": False, "error": f"Template not found: {template_name}"}
+
+    if not template.get("is_active", True):
+        return {"success": False, "error": "Template is disabled"}
+
+    # Prepare subject and body
+    subject = template["subject"]
+    body = template["body"]
+
+    for key, value in params.items():
+        placeholder = "{" + key + "}"
+        subject = subject.replace(placeholder, str(value))
+        body = body.replace(placeholder, str(value))
+
+    # Get recipients
+    recipients = [
+        user["email"]
+        for user in _users_db
+        if user.get("receive_notifications", True) and user.get("is_active", True)
+    ]
+
+    if not recipients:
+        return {"success": False, "error": "No recipients with notifications enabled"}
+
+    # Send emails
+    email_sender = EmailSender()
+    results = {}
+    success_count = 0
+    fail_count = 0
+
+    for recipient in recipients:
+        sent = email_sender.send_email(to=recipient, subject=subject, body=body)
+        results[recipient] = "sent" if sent else "failed"
+        if sent:
+            success_count += 1
+        else:
+            fail_count += 1
+
+    return {
+        "success": success_count > 0,
+        "sent_count": success_count,
+        "failed_count": fail_count,
+        "recipients": results,
+        "template": template_name,
+    }
+
+
+@app.post("/api/notifications/send")
+async def send_notification(
+    request: NotificationRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Send a notification to all users using a template"""
+    result = _send_notification_to_all_users(request.template_name, request.params)
+    if not result["success"] and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.post("/api/notifications/order-error")
+async def send_order_error_notification(
+    request: OrderErrorNotificationRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Send order error notification to all users"""
+    result = _send_notification_to_all_users("order_error", {
+        "order_code": request.order_code,
+        "supplier": request.supplier,
+        "error_message": request.error_message,
+    })
+    if not result["success"] and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.post("/api/notifications/order-completed")
+async def send_order_completed_notification(
+    request: OrderCompletedNotificationRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Send order completed notification to all users"""
+    result = _send_notification_to_all_users("order_completed", {
+        "order_code": request.order_code,
+        "supplier": request.supplier,
+        "item_count": request.item_count,
+    })
+    if not result["success"] and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.post("/api/notifications/system-alert")
+async def send_system_alert_notification(
+    request: SystemAlertNotificationRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Send system alert notification to all users"""
+    result = _send_notification_to_all_users("system_alert", {
+        "level": request.level,
+        "message": request.message,
+        "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+    if not result["success"] and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 # Startup/shutdown events
 @app.on_event("startup")
 async def startup():
