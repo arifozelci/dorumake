@@ -37,8 +37,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Logs
-logs/
+# Logs (only at root level, not in app directories)
+/logs/
+apps/robot/logs/
 *.log
 npm-debug.log*
 
