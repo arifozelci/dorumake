@@ -306,6 +306,62 @@ _orders_db: List[dict] = [
     },
 ]
 
+# Audit logs - user actions
+_audit_logs_db: List[dict] = [
+    {"id": "audit-001", "user": "admin", "action": "login", "resource_type": "auth", "resource_id": None, "details": "Kullanıcı giriş yaptı", "timestamp": (datetime.utcnow() - timedelta(hours=1)).isoformat(), "ip_address": "192.168.1.100"},
+    {"id": "audit-002", "user": "admin", "action": "view_orders", "resource_type": "order", "resource_id": None, "details": "Sipariş listesi görüntülendi", "timestamp": (datetime.utcnow() - timedelta(minutes=45)).isoformat(), "ip_address": "192.168.1.100"},
+    {"id": "audit-003", "user": "admin", "action": "view_order", "resource_type": "order", "resource_id": "ord-001", "details": "Sipariş detayı görüntülendi: ORD-2026-00001", "timestamp": (datetime.utcnow() - timedelta(minutes=30)).isoformat(), "ip_address": "192.168.1.100"},
+    {"id": "audit-004", "user": "admin", "action": "fetch_emails", "resource_type": "email", "resource_id": None, "details": "E-postalar IMAP'tan çekildi", "timestamp": (datetime.utcnow() - timedelta(minutes=20)).isoformat(), "ip_address": "192.168.1.100"},
+]
+
+# Order operation logs - step by step robot actions
+_order_logs_db: List[dict] = [
+    # ord-001 (completed - mutlu_aku)
+    {"id": "log-001-01", "order_id": "ord-001", "step": 1, "action": "portal_open", "message": "Mutlu Akü portalı açılıyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=5)).isoformat()},
+    {"id": "log-001-02", "order_id": "ord-001", "step": 2, "action": "login", "message": "Giriş yapılıyor: burak.bakar@castrol.com", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=4)).isoformat()},
+    {"id": "log-001-03", "order_id": "ord-001", "step": 3, "action": "customer_select", "message": "Müşteri seçiliyor: CASTROL BATMAN DALAY PETROL", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=3)).isoformat()},
+    {"id": "log-001-04", "order_id": "ord-001", "step": 4, "action": "menu_navigate", "message": "Menü: Satış/Satın Alma > Satın Alma Siparişi", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=2)).isoformat()},
+    {"id": "log-001-05", "order_id": "ord-001", "step": 5, "action": "form_create", "message": "Yeni sipariş formu oluşturuluyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=1)).isoformat()},
+    {"id": "log-001-06", "order_id": "ord-001", "step": 6, "action": "form_fill", "message": "Form dolduruldu - Depo: Merkez, Ödeme: 60 Gün", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=1, minutes=58)).isoformat()},
+    {"id": "log-001-07", "order_id": "ord-001", "step": 7, "action": "products_tab", "message": "Ürünler sekmesine geçiliyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=1, minutes=55)).isoformat()},
+    {"id": "log-001-08", "order_id": "ord-001", "step": 8, "action": "products_add", "message": "12 ürün eklendi, toplam: ₺45.600", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=1, minutes=45)).isoformat()},
+    {"id": "log-001-09", "order_id": "ord-001", "step": 9, "action": "order_save", "message": "Sipariş kaydediliyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=1, minutes=10)).isoformat()},
+    {"id": "log-001-10", "order_id": "ord-001", "step": 10, "action": "sap_confirm", "message": "SAP onayı gönderildi", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=1, minutes=5)).isoformat()},
+    {"id": "log-001-11", "order_id": "ord-001", "step": 11, "action": "complete", "message": "Sipariş başarıyla tamamlandı: SAP-2026-00001", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=1)).isoformat()},
+
+    # ord-002 (completed - mann_hummel)
+    {"id": "log-002-01", "order_id": "ord-002", "step": 1, "action": "portal_open", "message": "TecCom portalı açılıyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=5)).isoformat()},
+    {"id": "log-002-02", "order_id": "ord-002", "step": 2, "action": "login", "message": "Giriş yapılıyor: dilsad.kaptan@dorufinansal.com", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=4)).isoformat()},
+    {"id": "log-002-03", "order_id": "ord-002", "step": 3, "action": "menu_navigate", "message": "Menü: Sorgulama ve sipariş > Dosya Yükle", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=3)).isoformat()},
+    {"id": "log-002-04", "order_id": "ord-002", "step": 4, "action": "csv_generate", "message": "CSV dosyası oluşturuldu: 45 ürün", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=2)).isoformat()},
+    {"id": "log-002-05", "order_id": "ord-002", "step": 5, "action": "file_upload", "message": "Siparis_formu_TecOrder_2018.csv yükleniyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=1)).isoformat()},
+    {"id": "log-002-06", "order_id": "ord-002", "step": 6, "action": "supplier_select", "message": "Tedarikçi seçildi: FILTRON-MANN+HUMMEL Türkiye", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=55)).isoformat()},
+    {"id": "log-002-07", "order_id": "ord-002", "step": 7, "action": "customer_select", "message": "Müşteri seçildi: TRM56062", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=50)).isoformat()},
+    {"id": "log-002-08", "order_id": "ord-002", "step": 8, "action": "order_submit", "message": "TALEP → SİPARİŞ butonu tıklandı", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=10)).isoformat()},
+    {"id": "log-002-09", "order_id": "ord-002", "step": 9, "action": "complete", "message": "Sipariş başarıyla tamamlandı: TEC-2026-00002", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=2)).isoformat()},
+
+    # ord-003 (failed - mutlu_aku)
+    {"id": "log-003-01", "order_id": "ord-003", "step": 1, "action": "portal_open", "message": "Mutlu Akü portalı açılıyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=4, minutes=5)).isoformat()},
+    {"id": "log-003-02", "order_id": "ord-003", "step": 2, "action": "login", "message": "Giriş yapılıyor: burak.bakar@castrol.com", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=4, minutes=4)).isoformat()},
+    {"id": "log-003-03", "order_id": "ord-003", "step": 3, "action": "customer_select", "message": "Müşteri seçiliyor: CASTROL BATMAN DALAY PETROL", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=4, minutes=3)).isoformat()},
+    {"id": "log-003-04", "order_id": "ord-003", "step": 4, "action": "menu_navigate", "message": "Menü: Satış/Satın Alma > Satın Alma Siparişi", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=4, minutes=2)).isoformat()},
+    {"id": "log-003-05", "order_id": "ord-003", "step": 5, "action": "form_create", "message": "Yeni sipariş formu oluşturuluyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=4, minutes=1)).isoformat()},
+    {"id": "log-003-06", "order_id": "ord-003", "step": 6, "action": "form_fill", "message": "Form dolduruldu - Depo: Merkez, Ödeme: 60 Gün", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=58)).isoformat()},
+    {"id": "log-003-07", "order_id": "ord-003", "step": 7, "action": "products_tab", "message": "Ürünler sekmesine geçiliyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=55)).isoformat()},
+    {"id": "log-003-08", "order_id": "ord-003", "step": 8, "action": "products_add", "message": "8 ürün eklendi, toplam: ₺28.400", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=45)).isoformat()},
+    {"id": "log-003-09", "order_id": "ord-003", "step": 9, "action": "order_save", "message": "Sipariş kaydediliyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=40)).isoformat()},
+    {"id": "log-003-10", "order_id": "ord-003", "step": 10, "action": "sap_confirm", "message": "SAP onay butonu bulunamadı - 3 deneme yapıldı", "status": "error", "timestamp": (datetime.utcnow() - timedelta(hours=3, minutes=35)).isoformat(), "screenshot": "ord-003_sap_confirm_error.png"},
+
+    # ord-004 (processing - mann_hummel)
+    {"id": "log-004-01", "order_id": "ord-004", "step": 1, "action": "portal_open", "message": "TecCom portalı açılıyor...", "status": "success", "timestamp": (datetime.utcnow() - timedelta(minutes=30)).isoformat()},
+    {"id": "log-004-02", "order_id": "ord-004", "step": 2, "action": "login", "message": "Giriş yapılıyor: dilsad.kaptan@dorufinansal.com", "status": "success", "timestamp": (datetime.utcnow() - timedelta(minutes=29)).isoformat()},
+    {"id": "log-004-03", "order_id": "ord-004", "step": 3, "action": "menu_navigate", "message": "Menü: Sorgulama ve sipariş > Dosya Yükle", "status": "success", "timestamp": (datetime.utcnow() - timedelta(minutes=28)).isoformat()},
+    {"id": "log-004-04", "order_id": "ord-004", "step": 4, "action": "csv_generate", "message": "CSV dosyası oluşturuldu: 22 ürün", "status": "success", "timestamp": (datetime.utcnow() - timedelta(minutes=27)).isoformat()},
+    {"id": "log-004-05", "order_id": "ord-004", "step": 5, "action": "file_upload", "message": "Dosya yükleniyor...", "status": "processing", "timestamp": (datetime.utcnow() - timedelta(minutes=26)).isoformat()},
+
+    # ord-005 (pending - no logs yet)
+]
+
 
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats(current_user: User = Depends(get_current_active_user)):
@@ -379,10 +435,29 @@ async def retry_order(order_id: str, current_user: User = Depends(get_current_ac
             if order["status"] == "failed":
                 order["status"] = "pending"
                 order["error_message"] = None
+                # Add audit log
+                _audit_logs_db.append({
+                    "id": f"audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                    "user": current_user.username,
+                    "action": "order_retry",
+                    "resource_type": "order",
+                    "resource_id": order_id,
+                    "details": f"Sipariş yeniden deneme kuyruğuna alındı: {order['order_code']}",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "ip_address": "127.0.0.1"
+                })
                 return {"status": "queued", "order_id": order_id}
             else:
                 raise HTTPException(status_code=400, detail="Order is not in failed status")
     raise HTTPException(status_code=404, detail="Order not found")
+
+
+@app.get("/api/orders/{order_id}/logs")
+async def get_order_logs(order_id: str, current_user: User = Depends(get_current_active_user)):
+    """Get step-by-step operation logs for an order"""
+    logs = [log for log in _order_logs_db if log["order_id"] == order_id]
+    logs = sorted(logs, key=lambda x: x["step"])
+    return {"logs": logs, "total": len(logs)}
 
 
 @app.get("/api/emails")
@@ -643,6 +718,40 @@ async def get_logs(
         "page": page,
         "page_size": page_size,
         "stats": stats,
+    }
+
+
+@app.get("/api/audit-logs")
+async def get_audit_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    user: Optional[str] = None,
+    action: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get user audit logs"""
+    filtered = _audit_logs_db
+
+    if user:
+        filtered = [l for l in filtered if l["user"] == user]
+
+    if action:
+        filtered = [l for l in filtered if l["action"] == action]
+
+    # Sort by timestamp descending
+    filtered = sorted(filtered, key=lambda x: x["timestamp"], reverse=True)
+
+    # Paginate
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = filtered[start:end]
+
+    return {
+        "logs": paginated,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
     }
 
 

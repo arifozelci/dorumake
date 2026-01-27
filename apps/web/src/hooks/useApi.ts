@@ -42,6 +42,15 @@ export function useOrder(orderId: string) {
   });
 }
 
+export function useOrderLogs(orderId: string) {
+  return useQuery({
+    queryKey: ['orderLogs', orderId],
+    queryFn: () => apiService.getOrderLogs(orderId),
+    enabled: !!orderId,
+    refetchInterval: 5000, // 5 seconds for active orders
+  });
+}
+
 export function useRetryOrder() {
   const queryClient = useQueryClient();
 

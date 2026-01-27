@@ -130,6 +130,22 @@ export interface SchedulerJob {
   trigger: string;
 }
 
+export interface OrderLog {
+  id: string;
+  order_id: string;
+  step: number;
+  action: string;
+  message: string;
+  status: 'success' | 'error' | 'processing';
+  timestamp: string;
+  screenshot?: string;
+}
+
+export interface OrderLogListResponse {
+  logs: OrderLog[];
+  total: number;
+}
+
 // API Functions
 export const apiService = {
   // Health
@@ -162,6 +178,11 @@ export const apiService = {
 
   async retryOrder(orderId: string): Promise<{ status: string; order_id: string }> {
     const { data } = await api.post(`/api/orders/${orderId}/retry`);
+    return data;
+  },
+
+  async getOrderLogs(orderId: string): Promise<OrderLogListResponse> {
+    const { data } = await api.get(`/api/orders/${orderId}/logs`);
     return data;
   },
 

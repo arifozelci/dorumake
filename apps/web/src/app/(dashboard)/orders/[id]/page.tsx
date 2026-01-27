@@ -2,10 +2,32 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { Header, StatusBadge } from '@/components';
-import { useOrder, useRetryOrder } from '@/hooks/useApi';
-import { formatDate, getSupplierLabel } from '@/lib/utils';
-import { ArrowLeft, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { useOrder, useOrderLogs, useRetryOrder } from '@/hooks/useApi';
+import { formatDate, getSupplierLabel, cn } from '@/lib/utils';
+import { ArrowLeft, RefreshCw, AlertCircle, CheckCircle, Play, Loader2, XCircle, Monitor, LogIn, User, Menu, FileText, Upload, Database, Send, Package } from 'lucide-react';
 import Link from 'next/link';
+
+// Get icon for log action
+function getActionIcon(action: string) {
+  const icons: Record<string, React.ReactNode> = {
+    portal_open: <Monitor className="w-4 h-4" />,
+    login: <LogIn className="w-4 h-4" />,
+    customer_select: <User className="w-4 h-4" />,
+    menu_navigate: <Menu className="w-4 h-4" />,
+    form_create: <FileText className="w-4 h-4" />,
+    form_fill: <FileText className="w-4 h-4" />,
+    products_tab: <Package className="w-4 h-4" />,
+    products_add: <Package className="w-4 h-4" />,
+    order_save: <Database className="w-4 h-4" />,
+    order_submit: <Send className="w-4 h-4" />,
+    sap_confirm: <CheckCircle className="w-4 h-4" />,
+    complete: <CheckCircle className="w-4 h-4" />,
+    csv_generate: <FileText className="w-4 h-4" />,
+    file_upload: <Upload className="w-4 h-4" />,
+    supplier_select: <User className="w-4 h-4" />,
+  };
+  return icons[action] || <Play className="w-4 h-4" />;
+}
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -13,6 +35,7 @@ export default function OrderDetailPage() {
   const orderId = params.id as string;
 
   const { data: order, isLoading, error } = useOrder(orderId);
+  const { data: logsData, isLoading: logsLoading } = useOrderLogs(orderId);
   const retryMutation = useRetryOrder();
 
   const handleRetry = async () => {
@@ -111,47 +134,86 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            {/* Timeline */}
+            {/* Operation Logs */}
             <div className="card">
-              <div className="p-4 border-b border-gray-100">
-                <h2 className="font-semibold text-gray-900">Zaman Çizelgesi</h2>
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">İşlem Adımları</h2>
+                {logsData && (
+                  <span className="text-sm text-gray-500">{logsData.total} adım</span>
+                )}
               </div>
               <div className="p-4">
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <CheckCircle className="w-4 h-4 text-primary-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">Sipariş Oluşturuldu</p>
-                      <p className="text-sm text-gray-500">{formatDate(order.created_at)}</p>
+                {logsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+                    <span className="ml-2 text-gray-500">Yükleniyor...</span>
+                  </div>
+                ) : logsData && logsData.logs.length > 0 ? (
+                  <div className="relative">
+                    {/* Vertical line */}
+                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+
+                    <div className="space-y-4">
+                      {logsData.logs.map((log, index) => (
+                        <div key={log.id} className="relative flex items-start gap-4 pl-10">
+                          {/* Step indicator */}
+                          <div
+                            className={cn(
+                              'absolute left-0 w-8 h-8 rounded-full flex items-center justify-center',
+                              log.status === 'success' && 'bg-success-100 text-success-600',
+                              log.status === 'error' && 'bg-danger-100 text-danger-600',
+                              log.status === 'processing' && 'bg-primary-100 text-primary-600'
+                            )}
+                          >
+                            {log.status === 'processing' ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : log.status === 'error' ? (
+                              <XCircle className="w-4 h-4" />
+                            ) : (
+                              getActionIcon(log.action)
+                            )}
+                          </div>
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-400">
+                                Adım {log.step}
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-xs px-1.5 py-0.5 rounded',
+                                  log.status === 'success' && 'bg-success-50 text-success-700',
+                                  log.status === 'error' && 'bg-danger-50 text-danger-700',
+                                  log.status === 'processing' && 'bg-primary-50 text-primary-700'
+                                )}
+                              >
+                                {log.status === 'success' ? 'Başarılı' : log.status === 'error' ? 'Hata' : 'İşleniyor'}
+                              </span>
+                            </div>
+                            <p className="text-gray-900 mt-0.5">{log.message}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {formatDate(log.timestamp)}
+                            </p>
+                            {log.screenshot && (
+                              <div className="mt-2">
+                                <span className="text-xs text-danger-600 bg-danger-50 px-2 py-1 rounded">
+                                  📸 {log.screenshot}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-
-                  {order.completed_at && (
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          order.status === 'completed'
-                            ? 'bg-success-50'
-                            : 'bg-danger-50'
-                        }`}
-                      >
-                        {order.status === 'completed' ? (
-                          <CheckCircle className="w-4 h-4 text-success-600" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-danger-600" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {order.status === 'completed' ? 'Tamamlandı' : 'Başarısız Oldu'}
-                        </p>
-                        <p className="text-sm text-gray-500">{formatDate(order.completed_at)}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Play className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p>Henüz işlem kaydı yok</p>
+                    <p className="text-sm">Sipariş işlenmeye başladığında adımlar burada görünecek</p>
+                  </div>
+                )}
               </div>
             </div>
 
