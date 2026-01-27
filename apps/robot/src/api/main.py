@@ -15,10 +15,12 @@ from src.api.auth import (
     authenticate_user,
     create_access_token,
     get_current_active_user,
+    get_password_hash,
     Token,
     User,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
+from src.notifications.email_sender import EmailSender, generate_random_password
 
 # Create FastAPI app
 app = FastAPI(
@@ -354,6 +356,9 @@ async def create_user_with_email(
         if u["email"] == request.email:
             raise HTTPException(status_code=400, detail="Email already exists")
 
+    # Generate password if not provided
+    password = request.password or generate_random_password()
+
     new_user = {
         "id": _next_user_id,
         "username": request.username,
@@ -363,12 +368,34 @@ async def create_user_with_email(
         "is_active": True,
         "receive_notifications": True,
         "created_at": datetime.utcnow().isoformat(),
+        "hashed_password": get_password_hash(password),
     }
     _users_db.append(new_user)
     _next_user_id += 1
 
-    # TODO: Send email notification
-    # TODO: Store password hash in database
+    # Send welcome email
+    email_sender = EmailSender()
+    email_sent = email_sender.send_email(
+        to=request.email,
+        subject="DoruMake - Hoş Geldiniz",
+        body=f"""Merhaba {request.full_name or request.username},
+
+DoruMake sistemine hoş geldiniz!
+
+Kullanıcı adınız: {request.username}
+Geçici şifreniz: {password}
+
+Lütfen ilk girişinizde şifrenizi değiştirin.
+
+Giriş adresi: https://93-94-251-138.sslip.io/login
+
+İyi çalışmalar,
+DoruMake Ekibi"""
+    )
+
+    if not email_sent:
+        # Log warning but don't fail the request
+        print(f"Warning: Could not send welcome email to {request.email}")
 
     return new_user
 
@@ -423,8 +450,34 @@ async def reset_user_password(
     """Reset user password and send email"""
     for user in _users_db:
         if user["id"] == user_id:
-            # TODO: Generate new password, hash it, store it, and send email
-            return {"status": "password_reset", "user_id": user_id, "message": "Password reset email sent"}
+            # Generate new password
+            new_password = generate_random_password()
+            user["hashed_password"] = get_password_hash(new_password)
+
+            # Send password reset email
+            email_sender = EmailSender()
+            email_sent = email_sender.send_email(
+                to=user["email"],
+                subject="DoruMake - Şifre Sıfırlama",
+                body=f"""Merhaba {user.get('full_name', user['username'])},
+
+Şifreniz sıfırlandı.
+
+Yeni geçici şifreniz: {new_password}
+
+Lütfen giriş yaptıktan sonra şifrenizi değiştirin.
+
+Giriş adresi: https://93-94-251-138.sslip.io/login
+
+İyi çalışmalar,
+DoruMake Ekibi"""
+            )
+
+            return {
+                "status": "password_reset",
+                "user_id": user_id,
+                "message": "Password reset email sent" if email_sent else "Password reset but email not sent (SMTP not configured)"
+            }
 
     raise HTTPException(status_code=404, detail="User not found")
 
