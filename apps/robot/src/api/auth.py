@@ -77,9 +77,24 @@ def get_password_hash(password: str) -> str:
 
 def get_user(username: str) -> Optional[UserInDB]:
     """Get user from database/dict"""
+    # Check hardcoded admin users first
     if username in ADMIN_USERS:
         user_dict = ADMIN_USERS[username]
         return UserInDB(**user_dict)
+
+    # Check dynamic users from main.py (late import to avoid circular imports)
+    try:
+        from src.api.main import _users_db
+        for user in _users_db:
+            if user.get("username") == username:
+                return UserInDB(
+                    username=user["username"],
+                    hashed_password=user.get("hashed_password", ""),
+                    disabled=not user.get("is_active", True)
+                )
+    except ImportError:
+        pass
+
     return None
 
 
