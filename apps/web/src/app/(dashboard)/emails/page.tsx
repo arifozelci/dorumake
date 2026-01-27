@@ -4,12 +4,146 @@ import { useState } from 'react';
 import { Header, DataTable, StatusBadge } from '@/components';
 import { useEmails } from '@/hooks/useApi';
 import { formatDate, truncate } from '@/lib/utils';
-import { RefreshCw, Filter, Paperclip, Mail as MailIcon } from 'lucide-react';
+import { RefreshCw, Filter, Paperclip, Mail as MailIcon, X, FileSpreadsheet, Download, Eye } from 'lucide-react';
 import type { Email } from '@/lib/api';
+
+interface EmailWithAttachments extends Email {
+  attachments?: string[];
+  body_text?: string;
+  is_order_email?: boolean;
+}
+
+function EmailDetailModal({
+  email,
+  onClose
+}: {
+  email: EmailWithAttachments | null;
+  onClose: () => void;
+}) {
+  if (!email) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">E-posta Detayı</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {/* Email Info */}
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider">Konu</label>
+              <p className="text-gray-900 font-medium mt-1">{email.subject}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Gönderen</label>
+                <p className="text-gray-900 mt-1">{email.from_address}</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Tarih</label>
+                <p className="text-gray-900 mt-1">{formatDate(email.received_at)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Durum</label>
+                <div className="mt-1">
+                  <StatusBadge status={email.status} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Sipariş E-postası</label>
+                <p className="text-gray-900 mt-1">
+                  {email.is_order_email ? (
+                    <span className="text-success-600 font-medium">Evet</span>
+                  ) : (
+                    <span className="text-gray-500">Hayır</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Attachments */}
+          {email.attachments && email.attachments.length > 0 && (
+            <div className="mb-6">
+              <label className="text-xs text-gray-500 uppercase tracking-wider">Ekler ({email.attachments.length})</label>
+              <div className="mt-2 space-y-2">
+                {email.attachments.map((attachment, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-success-100 rounded-lg">
+                        <FileSpreadsheet className="w-5 h-5 text-success-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{attachment}</p>
+                        <p className="text-xs text-gray-500">Excel Dosyası</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        title="Önizle"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        title="İndir"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Body Preview */}
+          {email.body_text && (
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider">İçerik</label>
+              <div className="mt-2 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">
+                  {email.body_text}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50">
+          <button
+            onClick={onClose}
+            className="btn btn-secondary w-full"
+          >
+            Kapat
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function EmailsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [selectedEmail, setSelectedEmail] = useState<EmailWithAttachments | null>(null);
   const pageSize = 20;
 
   const { data, isLoading, refetch } = useEmails({
@@ -22,7 +156,7 @@ export default function EmailsPage() {
     {
       key: 'subject',
       header: 'Konu',
-      render: (email: Email) => (
+      render: (email: EmailWithAttachments) => (
         <div className="flex items-center gap-2">
           <MailIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <span className="font-medium text-gray-900" title={email.subject}>
@@ -40,20 +174,36 @@ export default function EmailsPage() {
     {
       key: 'from_address',
       header: 'Gönderen',
-      render: (email: Email) => (
+      render: (email: EmailWithAttachments) => (
         <span className="text-gray-600">{truncate(email.from_address, 30)}</span>
       ),
     },
     {
       key: 'status',
       header: 'Durum',
-      render: (email: Email) => <StatusBadge status={email.status} />,
+      render: (email: EmailWithAttachments) => <StatusBadge status={email.status} />,
     },
     {
       key: 'received_at',
       header: 'Alınma Tarihi',
-      render: (email: Email) => (
+      render: (email: EmailWithAttachments) => (
         <span className="text-gray-500 text-sm">{formatDate(email.received_at)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (email: EmailWithAttachments) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedEmail(email);
+          }}
+          className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+          title="Detay"
+        >
+          <Eye className="w-4 h-4" />
+        </button>
       ),
     },
   ];
@@ -122,9 +272,18 @@ export default function EmailsPage() {
             onPageChange={setPage}
             isLoading={isLoading}
             emptyMessage="E-posta bulunamadı"
+            onRowClick={(email: EmailWithAttachments) => setSelectedEmail(email)}
           />
         </div>
       </div>
+
+      {/* Email Detail Modal */}
+      {selectedEmail && (
+        <EmailDetailModal
+          email={selectedEmail}
+          onClose={() => setSelectedEmail(null)}
+        />
+      )}
     </div>
   );
 }

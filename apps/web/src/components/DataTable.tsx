@@ -17,6 +17,7 @@ interface DataTableProps<T> {
   pageSize: number;
   total: number;
   onPageChange: (page: number) => void;
+  onRowClick?: (item: T) => void;
   isLoading?: boolean;
   emptyMessage?: string;
 }
@@ -40,6 +41,7 @@ export function DataTable<T extends { id: string }>({
   pageSize,
   total,
   onPageChange,
+  onRowClick,
   isLoading = false,
   emptyMessage = 'Veri bulunamadı',
 }: DataTableProps<T>) {
@@ -108,7 +110,11 @@ export function DataTable<T extends { id: string }>({
             {data.map((item) => (
               <tr
                 key={item.id}
-                className="transition-colors duration-150 hover:bg-gray-50/50"
+                onClick={() => onRowClick?.(item)}
+                className={cn(
+                  "transition-colors duration-150 hover:bg-gray-50/50",
+                  onRowClick && "cursor-pointer"
+                )}
               >
                 {columns.map((column) => (
                   <td
