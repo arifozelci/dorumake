@@ -240,18 +240,90 @@ async def health_check():
     }
 
 
+# In-memory storage (initialized before endpoints that use them)
+_emails_db: List[dict] = []
+
+_orders_db: List[dict] = [
+    {
+        "id": "ord-001",
+        "order_code": "ORD-2026-00001",
+        "supplier_type": "mutlu_aku",
+        "status": "completed",
+        "customer_name": "CASTROL BATMAN DALAY PETROL",
+        "item_count": 12,
+        "total_amount": 45600.00,
+        "created_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
+        "completed_at": (datetime.utcnow() - timedelta(hours=1)).isoformat(),
+        "error_message": None,
+    },
+    {
+        "id": "ord-002",
+        "order_code": "ORD-2026-00002",
+        "supplier_type": "mann_hummel",
+        "status": "completed",
+        "customer_name": "TRM56062",
+        "item_count": 45,
+        "total_amount": 12350.00,
+        "created_at": (datetime.utcnow() - timedelta(hours=3)).isoformat(),
+        "completed_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
+        "error_message": None,
+    },
+    {
+        "id": "ord-003",
+        "order_code": "ORD-2026-00003",
+        "supplier_type": "mutlu_aku",
+        "status": "failed",
+        "customer_name": "CASTROL BATMAN DALAY PETROL",
+        "item_count": 8,
+        "total_amount": 28400.00,
+        "created_at": (datetime.utcnow() - timedelta(hours=4)).isoformat(),
+        "completed_at": None,
+        "error_message": "SAP onay butonu bulunamadı",
+    },
+    {
+        "id": "ord-004",
+        "order_code": "ORD-2026-00004",
+        "supplier_type": "mann_hummel",
+        "status": "processing",
+        "customer_name": "TRM56018",
+        "item_count": 22,
+        "total_amount": 8900.00,
+        "created_at": (datetime.utcnow() - timedelta(minutes=30)).isoformat(),
+        "completed_at": None,
+        "error_message": None,
+    },
+    {
+        "id": "ord-005",
+        "order_code": "ORD-2026-00005",
+        "supplier_type": "mutlu_aku",
+        "status": "pending",
+        "customer_name": "CASTROL BATMAN DALAY PETROL",
+        "item_count": 15,
+        "total_amount": 52100.00,
+        "created_at": (datetime.utcnow() - timedelta(minutes=10)).isoformat(),
+        "completed_at": None,
+        "error_message": None,
+    },
+]
+
+
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats(current_user: User = Depends(get_current_active_user)):
     """Get dashboard statistics"""
-    # TODO: Implement actual database queries
+    today = datetime.utcnow().date()
+
+    # Calculate stats from in-memory data
+    today_orders = [o for o in _orders_db if datetime.fromisoformat(o["created_at"]).date() == today]
+    today_emails = [e for e in _emails_db if datetime.fromisoformat(e.get("received_at", "2000-01-01T00:00:00")).date() == today]
+
     return {
-        "today_orders": 0,
-        "today_successful": 0,
-        "today_failed": 0,
-        "pending_orders": 0,
-        "today_emails": 0,
-        "queue_mutlu": 0,
-        "queue_mann": 0,
+        "today_orders": len(today_orders),
+        "today_successful": len([o for o in today_orders if o["status"] == "completed"]),
+        "today_failed": len([o for o in today_orders if o["status"] == "failed"]),
+        "pending_orders": len([o for o in _orders_db if o["status"] in ("pending", "processing")]),
+        "today_emails": len(today_emails),
+        "queue_mutlu": len([o for o in _orders_db if o["status"] == "pending" and o["supplier_type"] == "mutlu_aku"]),
+        "queue_mann": len([o for o in _orders_db if o["status"] == "pending" and o["supplier_type"] == "mann_hummel"]),
     }
 
 
@@ -264,10 +336,27 @@ async def list_orders(
     current_user: User = Depends(get_current_active_user),
 ):
     """List orders with pagination and filters"""
-    # TODO: Implement database query
+    # Filter orders
+    filtered = _orders_db
+
+    if status:
+        filtered = [o for o in filtered if o["status"] == status]
+
+    if supplier:
+        filtered = [o for o in filtered if o["supplier_type"] == supplier]
+
+    # Sort by created_at descending
+    filtered = sorted(filtered, key=lambda x: x["created_at"], reverse=True)
+
+    # Paginate
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    orders = filtered[start:end]
+
     return {
-        "orders": [],
-        "total": 0,
+        "orders": orders,
+        "total": total,
         "page": page,
         "page_size": page_size,
     }
@@ -276,19 +365,24 @@ async def list_orders(
 @app.get("/api/orders/{order_id}", response_model=OrderResponse)
 async def get_order(order_id: str, current_user: User = Depends(get_current_active_user)):
     """Get order details"""
-    # TODO: Implement database query
+    for order in _orders_db:
+        if order["id"] == order_id:
+            return order
     raise HTTPException(status_code=404, detail="Order not found")
 
 
 @app.post("/api/orders/{order_id}/retry")
 async def retry_order(order_id: str, current_user: User = Depends(get_current_active_user)):
     """Retry failed order"""
-    # TODO: Implement retry logic
-    return {"status": "queued", "order_id": order_id}
-
-
-# In-memory emails storage
-_emails_db: List[dict] = []
+    for order in _orders_db:
+        if order["id"] == order_id:
+            if order["status"] == "failed":
+                order["status"] = "pending"
+                order["error_message"] = None
+                return {"status": "queued", "order_id": order_id}
+            else:
+                raise HTTPException(status_code=400, detail="Order is not in failed status")
+    raise HTTPException(status_code=404, detail="Order not found")
 
 
 @app.get("/api/emails")
@@ -491,6 +585,14 @@ async def get_logs(
         except Exception as e:
             continue
 
+    # Calculate stats before filtering
+    stats = {
+        "error_count": sum(1 for l in logs if l["level"].upper() == "ERROR"),
+        "warning_count": sum(1 for l in logs if l["level"].upper() == "WARNING"),
+        "info_count": sum(1 for l in logs if l["level"].upper() == "INFO"),
+        "debug_count": sum(1 for l in logs if l["level"].upper() == "DEBUG"),
+    }
+
     # Filter by level if specified
     if level:
         logs = [l for l in logs if l["level"].upper() == level.upper()]
@@ -513,6 +615,7 @@ async def get_logs(
         "total": total,
         "page": page,
         "page_size": page_size,
+        "stats": stats,
     }
 
 

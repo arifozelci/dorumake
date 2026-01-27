@@ -98,11 +98,19 @@ export interface LogEntry {
   details: Record<string, any> | null;
 }
 
+export interface LogStats {
+  error_count: number;
+  warning_count: number;
+  info_count: number;
+  debug_count: number;
+}
+
 export interface LogListResponse {
   logs: LogEntry[];
   total: number;
   page: number;
   page_size: number;
+  stats?: LogStats;
 }
 
 export interface Supplier {
