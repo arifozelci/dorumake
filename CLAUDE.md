@@ -496,12 +496,29 @@ pm2 logs dorumake-api --lines 50
 
 ---
 
-## Geliştirme Öncelikleri
+## Tamamlanan Özellikler
 
-1. Database şeması ve modeller
-2. E-posta servisi (IMAP fetch + Excel parse)
-3. Mutlu Akü robotu (daha karmaşık)
-4. Mann & Hummel robotu (CSV upload)
-5. Admin panel (dashboard + log viewer)
-6. Bildirim sistemi (e-posta alerts)
-7. Linux deployment scripts
+| Özellik | Durum | Dosya/Konum |
+|---------|-------|-------------|
+| Database şeması ve modeller | ✅ Tamamlandı | `apps/robot/src/db/models.py` |
+| E-posta servisi (IMAP fetch + Excel parse) | ✅ Tamamlandı | `apps/robot/src/email/fetcher.py`, `parser.py` |
+| Mutlu Akü robotu (11 adım) | ✅ Tamamlandı | `apps/robot/src/robots/mutlu_aku.py` |
+| Mann & Hummel robotu (6 adım, CSV upload) | ✅ Tamamlandı | `apps/robot/src/robots/mann_hummel.py` |
+| Admin panel (dashboard + log viewer) | ✅ Tamamlandı | `apps/web/src/app/` |
+| Bildirim sistemi (e-posta alerts) | ✅ Tamamlandı | `apps/robot/src/notifications/` |
+| Linux deployment (PM2) | ✅ Tamamlandı | Sunucu: 93.94.251.138 |
+| Screenshot sistemi (hata yakalama) | ✅ Tamamlandı | `apps/robot/src/robots/base.py` |
+| E-posta eki indirme | ✅ Tamamlandı | `apps/robot/src/email/fetcher.py` |
+| Sipariş işlem logları (adım adım) | ✅ Tamamlandı | API: `/api/orders/{id}/logs` |
+| Kullanıcı audit logları | ✅ Tamamlandı | API: `/api/audit-logs` |
+| JWT Authentication | ✅ Tamamlandı | `apps/robot/src/api/main.py` |
+| Kullanıcı yönetimi | ✅ Tamamlandı | `/users` sayfası |
+
+---
+
+## Sonraki Adımlar (İsteğe Bağlı)
+
+1. **Gerçek Veritabanı Bağlantısı** - In-memory yerine MySQL/PostgreSQL aktif etme
+2. **Robot Tetikleme** - Kuyruktan siparişleri işlemeye başlama
+3. **Webhook Entegrasyonu** - Slack/Teams bildirimleri
+4. **İki Faktörlü Doğrulama** - Admin panel güvenliği
