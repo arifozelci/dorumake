@@ -336,3 +336,42 @@ class Setting(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class User(Base):
+    """Kullanıcılar (Admin Panel)"""
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String(255))
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), default="user")  # admin, user, viewer
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    receive_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="user")
+
+
+class AuditLog(Base):
+    """Kullanıcı Denetim Logları"""
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
+
+    action: Mapped[str] = mapped_column(String(100), nullable=False)  # login, order_retry, etc.
+    resource_type: Mapped[Optional[str]] = mapped_column(String(100))  # order, email, user
+    resource_id: Mapped[Optional[str]] = mapped_column(String(36))
+    details: Mapped[Optional[str]] = mapped_column(Text)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="audit_logs")
