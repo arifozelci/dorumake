@@ -9,22 +9,25 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
-    """Database connection settings"""
+    """Database connection settings (SQL Server)"""
     model_config = SettingsConfigDict(env_prefix="DB_")
 
     host: str = "localhost"
-    port: int = 3306
-    user: str = "dorumake"
-    password: str = "dorumake2024"
-    name: str = "dorumake"
+    port: int = 1433
+    user: str = "sa"
+    password: str = "KolayAlacak2025"
+    name: str = "DoruMake"
+    driver: str = "ODBC Driver 18 for SQL Server"
 
     @property
     def url(self) -> str:
-        return f"mysql+pymysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}?charset=utf8mb4"
+        # Sync connection string for SQL Server
+        return f"mssql+pyodbc://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}?driver={self.driver}&TrustServerCertificate=yes"
 
     @property
     def async_url(self) -> str:
-        return f"mysql+aiomysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}?charset=utf8mb4"
+        # Async connection string for SQL Server using aioodbc
+        return f"mssql+aioodbc://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}?driver={self.driver}&TrustServerCertificate=yes"
 
 
 class EmailSettings(BaseSettings):
