@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Header, StatusBadge } from '@/components';
-import { useOrder, useOrderLogs, useRetryOrder } from '@/hooks/useApi';
+import { useOrder, useOrderLogs, useRetryOrder, useProcessOrder } from '@/hooks/useApi';
 import { formatDate, getSupplierLabel, cn } from '@/lib/utils';
-import { ArrowLeft, RefreshCw, AlertCircle, CheckCircle, Play, Loader2, XCircle, Monitor, LogIn, User, Menu, FileText, Upload, Database, Send, Package } from 'lucide-react';
+import { downloadOrderAttachment, api } from '@/lib/api';
+import { ArrowLeft, RefreshCw, AlertCircle, CheckCircle, Play, Loader2, XCircle, Monitor, LogIn, User, Menu, FileText, Upload, Database, Send, Package, Download, FileSpreadsheet, X, Image as ImageIcon } from 'lucide-react';
 import Link from 'next/link';
 
 // Get icon for log action
@@ -37,10 +39,52 @@ export default function OrderDetailPage() {
   const { data: order, isLoading, error } = useOrder(orderId);
   const { data: logsData, isLoading: logsLoading } = useOrderLogs(orderId);
   const retryMutation = useRetryOrder();
+  const processMutation = useProcessOrder();
+
+  // Screenshot modal state
+  const [screenshotModal, setScreenshotModal] = useState<{
+    open: boolean;
+    imageUrl: string | null;
+    loading: boolean;
+    error: string | null;
+  }>({ open: false, imageUrl: null, loading: false, error: null });
+
+  const handleViewScreenshot = async (screenshotPath: string) => {
+    // Extract path after "screenshots/"
+    let path = screenshotPath;
+    if (path.startsWith('screenshots/')) {
+      path = path.substring('screenshots/'.length);
+    }
+
+    setScreenshotModal({ open: true, imageUrl: null, loading: true, error: null });
+
+    try {
+      const response = await api.get(`/api/screenshots/${path}`, {
+        responseType: 'blob'
+      });
+      const url = URL.createObjectURL(response.data);
+      setScreenshotModal({ open: true, imageUrl: url, loading: false, error: null });
+    } catch (err) {
+      setScreenshotModal({ open: true, imageUrl: null, loading: false, error: 'Screenshot yüklenemedi' });
+    }
+  };
+
+  const closeScreenshotModal = () => {
+    if (screenshotModal.imageUrl) {
+      URL.revokeObjectURL(screenshotModal.imageUrl);
+    }
+    setScreenshotModal({ open: false, imageUrl: null, loading: false, error: null });
+  };
 
   const handleRetry = async () => {
     if (confirm('Bu siparişi yeniden denemek istediğinize emin misiniz?')) {
       await retryMutation.mutateAsync(orderId);
+    }
+  };
+
+  const handleProcess = async () => {
+    if (confirm('Bu siparişi işlemeye başlamak istediğinize emin misiniz?')) {
+      await processMutation.mutateAsync(orderId);
     }
   };
 
@@ -197,9 +241,13 @@ export default function OrderDetailPage() {
                             </p>
                             {log.screenshot && (
                               <div className="mt-2">
-                                <span className="text-xs text-danger-600 bg-danger-50 px-2 py-1 rounded">
-                                  📸 {log.screenshot}
-                                </span>
+                                <button
+                                  onClick={() => handleViewScreenshot(log.screenshot!)}
+                                  className="text-xs text-danger-600 bg-danger-50 px-2 py-1 rounded inline-flex items-center gap-1 hover:bg-danger-100 transition-colors cursor-pointer"
+                                >
+                                  <ImageIcon className="w-3 h-3" />
+                                  Screenshot Görüntüle
+                                </button>
                               </div>
                             )}
                           </div>
@@ -238,6 +286,18 @@ export default function OrderDetailPage() {
                 <h2 className="font-semibold text-gray-900">İşlemler</h2>
               </div>
               <div className="p-4 space-y-3">
+                {(order.status === 'pending' || order.status === 'failed') && (
+                  <button
+                    onClick={handleProcess}
+                    disabled={processMutation.isPending}
+                    className="btn btn-success w-full flex items-center justify-center"
+                  >
+                    <Play
+                      className={`w-4 h-4 mr-2 ${processMutation.isPending ? 'animate-pulse' : ''}`}
+                    />
+                    {processMutation.isPending ? 'İşleniyor...' : 'Siparişi İşle'}
+                  </button>
+                )}
                 {order.status === 'failed' && (
                   <button
                     onClick={handleRetry}
@@ -282,9 +342,74 @@ export default function OrderDetailPage() {
                 )}
               </div>
             </div>
+
+            {/* Excel Attachment */}
+            {order.attachment_filename && (
+              <div className="card">
+                <div className="p-4 border-b border-gray-100">
+                  <h2 className="font-semibold text-gray-900">Sipariş Dosyası</h2>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="p-2 bg-success-100 rounded-lg">
+                      <FileSpreadsheet className="w-6 h-6 text-success-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {order.attachment_filename}
+                      </p>
+                      <p className="text-xs text-gray-500">Excel Dosyası</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => downloadOrderAttachment(order.id, order.attachment_filename || 'order.xlsx')}
+                    className="btn btn-primary w-full mt-3 flex items-center justify-center"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Excel İndir
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Screenshot Modal */}
+      {screenshotModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeScreenshotModal}>
+          <div className="relative max-w-4xl max-h-[90vh] mx-4" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={closeScreenshotModal}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300"
+            >
+              <X className="w-8 h-8" />
+            </button>
+
+            {screenshotModal.loading && (
+              <div className="bg-white rounded-lg p-8 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-primary-500 mx-auto" />
+                <p className="mt-2 text-gray-500">Yükleniyor...</p>
+              </div>
+            )}
+
+            {screenshotModal.error && (
+              <div className="bg-white rounded-lg p-8 text-center">
+                <AlertCircle className="w-12 h-12 text-danger-500 mx-auto" />
+                <p className="mt-2 text-danger-600">{screenshotModal.error}</p>
+              </div>
+            )}
+
+            {screenshotModal.imageUrl && (
+              <img
+                src={screenshotModal.imageUrl}
+                alt="Hata Screenshot"
+                className="max-w-full max-h-[85vh] rounded-lg shadow-2xl"
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

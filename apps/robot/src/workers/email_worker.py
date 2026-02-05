@@ -14,6 +14,7 @@ from src.email.fetcher import EmailFetcher
 from src.email.parser import EmailParser, SupplierType
 from src.parser.excel_parser import ExcelParser
 from src.db.models import Email, EmailAttachment, Order, OrderItem, OrderStatus, EmailStatus
+from src.db.sqlserver import db
 
 
 class EmailWorker:
@@ -117,7 +118,14 @@ class EmailWorker:
             fetcher: EmailFetcher instance for marking as read
         """
         subject = email_data.get('subject', '')[:50]
+        message_id = email_data.get('message_id', '')
         email_logger.info(f"Processing email: {subject}...")
+
+        # Check if email was already processed (prevent duplicates)
+        if message_id and db.email_processed(message_id):
+            email_logger.info(f"Email already processed, skipping: {message_id[:30]}...")
+            await fetcher.mark_as_read(email_data['imap_uid'])
+            return
 
         # Parse email content
         parsed = self.email_parser.parse_email(email_data)
@@ -136,6 +144,28 @@ class EmailWorker:
         supplier_type = parsed['supplier_type']
         email_logger.info(f"Detected supplier: {supplier_type}")
 
+        # Save email to database
+        db_email_id = None  # Will be set by auto-increment
+        try:
+            received_at = email_data.get('received_at')
+            if isinstance(received_at, str):
+                received_at = datetime.fromisoformat(received_at.replace('Z', '+00:00'))
+
+            db_email_id = db.save_email(
+                message_id=email_data.get('message_id', ''),
+                subject=email_data.get('subject', ''),
+                from_address=email_data.get('from_address', ''),
+                to_address=email_data.get('to_address', ''),
+                received_at=received_at or datetime.utcnow(),
+                supplier_type=supplier_type,
+                status='PROCESSING',
+                has_attachment=len(parsed['excel_attachments']) > 0
+            )
+            email_logger.info(f"Email saved to database with ID: {db_email_id}")
+        except Exception as e:
+            email_logger.error(f"Failed to save email to database: {e}")
+            # Continue processing anyway
+
         # Parse Excel attachments
         orders_created = []
 
@@ -153,7 +183,8 @@ class EmailWorker:
                 order_data,
                 supplier_type,
                 email_data,
-                attachment
+                attachment,
+                db_email_id
             )
 
             if order_info:
@@ -166,11 +197,23 @@ class EmailWorker:
         # Mark email as read if at least one order created
         if orders_created:
             await fetcher.mark_as_read(email_data['imap_uid'])
+            # Update email status to processed
+            if db_email_id:
+                try:
+                    db.update_email_status(db_email_id, 'PROCESSED')
+                except Exception as e:
+                    email_logger.error(f"Failed to update email status: {e}")
             email_logger.info(
                 f"Email processed successfully. "
                 f"Created {len(orders_created)} orders."
             )
         else:
+            # Update email status to failed
+            if db_email_id:
+                try:
+                    db.update_email_status(db_email_id, 'FAILED')
+                except Exception as e:
+                    email_logger.error(f"Failed to update email status: {e}")
             email_logger.warning("No orders created from email")
 
     async def _create_order_from_data(
@@ -178,7 +221,8 @@ class EmailWorker:
         order_data,
         supplier_type: str,
         email_data: Dict[str, Any],
-        attachment: Dict[str, Any]
+        attachment: Dict[str, Any],
+        db_email_id: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Create order record from parsed data
@@ -188,13 +232,17 @@ class EmailWorker:
             supplier_type: Detected supplier type
             email_data: Original email data
             attachment: Attachment info
+            db_email_id: Database email ID (int) for linking order to email
 
         Returns:
             Created order info dict or None
         """
         try:
+            # Check if order already exists (prevent duplicates)
+            if db.order_exists(order_data.order_code):
+                email_logger.info(f"Order already exists, skipping: {order_data.order_code}")
+                return None
             order_id = str(uuid.uuid4())
-            email_id = str(uuid.uuid4())
 
             # Build order info (for database insert)
             order_info = {
@@ -210,16 +258,29 @@ class EmailWorker:
                 "item_count": len(order_data.items),
                 "total_quantity": sum(item.quantity for item in order_data.items),
                 "items": [item.to_dict() for item in order_data.items],
-                "email_id": email_id,
+                "email_id": db_email_id,
                 "email_subject": email_data.get('subject'),
                 "attachment_filename": attachment.get('filename'),
                 "attachment_path": attachment.get('file_path'),
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            # TODO: Save to database when session is available
-            # if self.db_session:
-            #     await self._save_order_to_db(order_info)
+            # Save order to database
+            try:
+                saved_order = db.create_order(
+                    order_code=order_info['order_code'],
+                    supplier_type=order_info['supplier_type'],
+                    customer_name=order_info.get('customer_name', ''),
+                    customer_code=order_info.get('customer_code', ''),
+                    total_items=order_info['item_count'],
+                    email_id=db_email_id,
+                    attachment_filename=order_info.get('attachment_filename'),
+                    attachment_path=order_info.get('attachment_path')
+                )
+                order_info['db_id'] = saved_order.get('id')
+                email_logger.info(f"Order saved to database: {saved_order.get('id')}")
+            except Exception as e:
+                email_logger.error(f"Failed to save order to database: {e}")
 
             email_logger.info(
                 f"Order prepared: {order_info['order_code']} - "

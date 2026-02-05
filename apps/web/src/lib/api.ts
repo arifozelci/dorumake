@@ -63,6 +63,9 @@ export interface Order {
   created_at: string;
   completed_at: string | null;
   error_message: string | null;
+  email_id: number | null;
+  attachment_filename: string | null;
+  attachment_path: string | null;
 }
 
 export interface OrderListResponse {
@@ -181,8 +184,20 @@ export const apiService = {
     return data;
   },
 
+  async processOrder(orderId: string): Promise<{ status: string; order_id: string; message: string }> {
+    const { data } = await api.post(`/api/orders/${orderId}/process`);
+    return data;
+  },
+
   async getOrderLogs(orderId: string): Promise<OrderLogListResponse> {
     const { data } = await api.get(`/api/orders/${orderId}/logs`);
+    return data;
+  },
+
+  async downloadOrderAttachment(orderId: string): Promise<Blob> {
+    const { data } = await api.get(`/api/orders/${orderId}/attachment`, {
+      responseType: 'blob'
+    });
     return data;
   },
 
@@ -230,3 +245,39 @@ export const apiService = {
     return data;
   },
 };
+
+// Get screenshot URL for viewing in a modal or new tab
+export function getScreenshotUrl(screenshotPath: string): string {
+  // screenshotPath is like "screenshots/mann/2026-02-05/filename.png"
+  // We need to extract the path after "screenshots/"
+  let path = screenshotPath;
+  if (path.startsWith('screenshots/')) {
+    path = path.substring('screenshots/'.length);
+  }
+  const token = authService.getToken();
+  const baseUrl = API_BASE_URL || '';
+  // Return the full URL with auth token as query parameter for image loading
+  return `${baseUrl}/api/screenshots/${path}`;
+}
+
+// Standalone download function for order attachments
+export async function downloadOrderAttachment(orderId: string, filename: string): Promise<void> {
+  try {
+    const response = await api.get(`/api/orders/${orderId}/attachment`, {
+      responseType: 'blob'
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Download failed:', error);
+    throw error;
+  }
+}

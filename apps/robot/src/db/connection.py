@@ -6,6 +6,7 @@ SQLAlchemy async connection management
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 
 from src.config import settings
 
@@ -45,9 +46,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db():
-    """Initialize database tables"""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Initialize database connection (tables should already exist in production)"""
+    from src.utils.logger import logger
+    try:
+        # Just verify connection works, don't create tables
+        # Tables are managed by direct SQL migrations
+        async with engine.begin() as conn:
+            # Simple connection test
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connection verified successfully")
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        raise
 
 
 async def close_db():

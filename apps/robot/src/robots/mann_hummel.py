@@ -128,6 +128,33 @@ class MannHummelRobot(BaseRobot):
         """Portal'a giriş yap"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Logging in...")
 
+        # Handle cookie consent popup if present
+        try:
+            # Try to click "Continue without consent" or similar button
+            consent_selectors = [
+                "button:has-text('Continue without consent')",
+                "button:has-text('Ohne Zustimmung fortfahren')",
+                "button:has-text('Accept All')",
+                "button:has-text('Alle akzeptieren')",
+                "button:has-text('Only required')",
+                "a:has-text('Continue without consent')",
+                ".privacy-consent-decline",
+                "#onetrust-reject-all-handler",
+                ".onetrust-close-btn-handler",
+            ]
+            for selector in consent_selectors:
+                try:
+                    consent_btn = await self.page.wait_for_selector(selector, timeout=3000)
+                    if consent_btn:
+                        await consent_btn.click()
+                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Dismissed cookie consent popup")
+                        await self.page.wait_for_timeout(1000)
+                        break
+                except:
+                    continue
+        except Exception as e:
+            robot_logger.debug(f"[{self.SUPPLIER_NAME}] No cookie popup found or error: {e}")
+
         # Wait for login form
         await self.wait_for_element(self.SELECTORS["username_input"])
 

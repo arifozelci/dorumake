@@ -216,15 +216,17 @@ class BaseRobot(ABC):
         screenshot_path: Optional[str] = None
     ) -> None:
         """
-        Adım logla
+        Adım logla - hem memory'e hem veritabanına kaydeder
 
         Args:
             step: İşlem adımı
-            status: SUCCESS, FAILED, INFO
+            status: SUCCESS, FAILED, INFO, RETRY, PROCESSING
             message: Log mesajı
             details: Ek detaylar
             screenshot_path: Screenshot yolu
         """
+        import json
+
         log_entry = {
             "id": str(uuid.uuid4()),
             "order_id": self.order.id,
@@ -243,6 +245,21 @@ class BaseRobot(ABC):
             robot_logger.error if status == "FAILED" else robot_logger.debug
         )
         log_func(f"[{self.SUPPLIER_NAME}] [{step.value}] {status}: {message}")
+
+        # Save to database
+        try:
+            from src.db.sqlserver import db
+            details_str = json.dumps(details) if details else None
+            db.add_order_log(
+                order_id=self.order.id,
+                action=step.value,
+                status=status,
+                message=message,
+                details=details_str,
+                screenshot_path=screenshot_path
+            )
+        except Exception as e:
+            robot_logger.warning(f"Could not save log to database: {e}")
 
     async def execute_step(
         self,
@@ -395,11 +412,20 @@ class BaseRobot(ABC):
         try:
             robot_logger.info(f"[{self.SUPPLIER_NAME}] Starting order processing: {self.order.order_code}")
 
+            # Log start
+            self.log_step(
+                RobotStep.INIT,
+                "PROCESSING",
+                f"Sipariş işleme başlatılıyor: {self.order.order_code}",
+                details={"supplier": self.SUPPLIER_NAME, "portal": self.PORTAL_URL}
+            )
+
             # Setup browser
             await self.setup()
 
             # Navigate to portal
             await self.navigate_to_portal()
+            self.log_step(RobotStep.INIT, "SUCCESS", f"Portal açıldı: {self.PORTAL_URL}")
 
             # Process order (implemented by subclass)
             result = await self.process_order()

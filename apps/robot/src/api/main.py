@@ -3,10 +3,16 @@ DoruMake API
 FastAPI application for admin panel communication
 """
 
+# Load environment variables from .env file FIRST
+from dotenv import load_dotenv
+load_dotenv()
+
 from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+import os
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
@@ -23,6 +29,9 @@ from src.api.auth import (
 )
 from src.notifications.email_sender import EmailSender, generate_random_password
 
+# Import SQL Server database helper
+from src.db.sqlserver import db as sqlserver_db
+
 # Create FastAPI app
 app = FastAPI(
     title="DoruMake API",
@@ -32,13 +41,19 @@ app = FastAPI(
     redoc_url="/api/redoc" if settings.debug else None,
 )
 
-# CORS middleware
+# CORS middleware - Restrict to allowed origins
+ALLOWED_ORIGINS = [
+    "https://93-94-251-138.sslip.io",  # Production admin panel
+    "http://localhost:3000",             # Local development
+    "http://127.0.0.1:3000",             # Local development alt
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -64,6 +79,9 @@ class OrderResponse(BaseModel):
     created_at: str
     completed_at: Optional[str]
     error_message: Optional[str]
+    email_id: Optional[int] = None
+    attachment_filename: Optional[str] = None
+    attachment_path: Optional[str] = None
 
 
 class OrderListResponse(BaseModel):
@@ -152,18 +170,67 @@ class LoginRequest(BaseModel):
 
 
 # ============================================
+# RATE LIMITING FOR LOGIN
+# ============================================
+from collections import defaultdict
+import time
+
+# Simple in-memory rate limiter for login attempts
+_login_attempts = defaultdict(list)  # IP -> list of timestamps
+MAX_LOGIN_ATTEMPTS = 5  # Maximum attempts
+LOGIN_WINDOW_SECONDS = 300  # 5 minute window
+LOGIN_LOCKOUT_SECONDS = 900  # 15 minute lockout after max attempts
+
+
+def _check_rate_limit(ip: str) -> None:
+    """Check if IP is rate limited for login attempts"""
+    now = time.time()
+    # Clean old attempts
+    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < LOGIN_LOCKOUT_SECONDS]
+
+    # Check if locked out
+    if len(_login_attempts[ip]) >= MAX_LOGIN_ATTEMPTS:
+        oldest = min(_login_attempts[ip])
+        remaining = int(LOGIN_LOCKOUT_SECONDS - (now - oldest))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in {remaining} seconds.",
+            headers={"Retry-After": str(remaining)}
+        )
+
+
+def _record_failed_attempt(ip: str) -> None:
+    """Record a failed login attempt"""
+    _login_attempts[ip].append(time.time())
+
+
+def _clear_attempts(ip: str) -> None:
+    """Clear login attempts on successful login"""
+    _login_attempts.pop(ip, None)
+
+
+# ============================================
 # AUTH ENDPOINTS
 # ============================================
 
-def _create_login_response(username: str, password: str) -> dict:
+def _create_login_response(username: str, password: str, client_ip: str = "unknown") -> dict:
     """Helper function to authenticate and create token response"""
+    # Check rate limit
+    _check_rate_limit(client_ip)
+
     user = authenticate_user(username, password)
     if not user:
+        # Record failed attempt
+        _record_failed_attempt(client_ip)
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Clear attempts on success
+    _clear_attempts(client_ip)
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
@@ -175,23 +242,29 @@ def _create_login_response(username: str, password: str) -> dict:
     }
 
 
+from fastapi import Request
+
 @app.post("/api/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Login endpoint (form-encoded) - returns JWT token
 
     Accepts application/x-www-form-urlencoded data.
     For JSON requests, use /api/auth/login/json endpoint.
+    Rate limited: 5 attempts per 5 minutes, 15 minute lockout.
     """
-    return _create_login_response(form_data.username, form_data.password)
+    client_ip = request.client.host if request.client else "unknown"
+    return _create_login_response(form_data.username, form_data.password, client_ip)
 
 
 @app.post("/api/auth/login/json", response_model=Token)
-async def login_json(request: LoginRequest):
+async def login_json(request: Request, login_data: LoginRequest):
     """Login endpoint (JSON) - returns JWT token
 
     Accepts application/json data with username and password fields.
+    Rate limited: 5 attempts per 5 minutes, 15 minute lockout.
     """
-    return _create_login_response(request.username, request.password)
+    client_ip = request.client.host if request.client else "unknown"
+    return _create_login_response(login_data.username, login_data.password, client_ip)
 
 
 @app.get("/api/auth/me")
@@ -207,12 +280,15 @@ class ForgotPasswordRequest(BaseModel):
 @app.post("/api/auth/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):
     """Send password reset email"""
-    # Find user by email
-    for user in _users_db:
-        if user.get("email") == request.email:
+    try:
+        # Find user by email in SQL Server
+        user = sqlserver_db.get_user_by_email(request.email)
+        if user:
             # Generate new password
             new_password = generate_random_password()
-            user["hashed_password"] = get_password_hash(new_password)
+
+            # Update password in database
+            sqlserver_db.update_user(user["id"], hashed_password=get_password_hash(new_password))
 
             # Send email
             email_sender = EmailSender()
@@ -233,16 +309,17 @@ Giriş adresi: https://93-94-251-138.sslip.io/login
 DoruMake Ekibi"""
             )
 
-            return {
-                "status": "success",
-                "message": "If the email exists, a password reset link has been sent"
-            }
-
-    # Return same message even if user not found (security)
-    return {
-        "status": "success",
-        "message": "If the email exists, a password reset link has been sent"
-    }
+        # Return same message even if user not found (security)
+        return {
+            "status": "success",
+            "message": "If the email exists, a password reset link has been sent"
+        }
+    except Exception as e:
+        # Still return success message (security - don't reveal if email exists)
+        return {
+            "status": "success",
+            "message": "If the email exists, a password reset link has been sent"
+        }
 
 
 # ============================================
@@ -390,22 +467,21 @@ _order_logs_db: List[dict] = [
 
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats(current_user: User = Depends(get_current_active_user)):
-    """Get dashboard statistics"""
-    today = datetime.utcnow().date()
-
-    # Calculate stats from in-memory data
-    today_orders = [o for o in _orders_db if datetime.fromisoformat(o["created_at"]).date() == today]
-    today_emails = [e for e in _emails_db if datetime.fromisoformat(e.get("received_at", "2000-01-01T00:00:00")).date() == today]
-
-    return {
-        "today_orders": len(today_orders),
-        "today_successful": len([o for o in today_orders if o["status"] == "completed"]),
-        "today_failed": len([o for o in today_orders if o["status"] == "failed"]),
-        "pending_orders": len([o for o in _orders_db if o["status"] in ("pending", "processing")]),
-        "today_emails": len(today_emails),
-        "queue_mutlu": len([o for o in _orders_db if o["status"] == "pending" and o["supplier_type"] == "mutlu_aku"]),
-        "queue_mann": len([o for o in _orders_db if o["status"] == "pending" and o["supplier_type"] == "mann_hummel"]),
-    }
+    """Get dashboard statistics from SQL Server"""
+    try:
+        stats = sqlserver_db.get_today_stats()
+        return stats
+    except Exception as e:
+        # Fallback to zeros on error
+        return {
+            "today_orders": 0,
+            "today_successful": 0,
+            "today_failed": 0,
+            "pending_orders": 0,
+            "today_emails": 0,
+            "queue_mutlu": 0,
+            "queue_mann": 0,
+        }
 
 
 @app.get("/api/orders", response_model=OrderListResponse)
@@ -416,73 +492,139 @@ async def list_orders(
     supplier: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
 ):
-    """List orders with pagination and filters"""
-    # Filter orders
-    filtered = _orders_db
-
-    if status:
-        filtered = [o for o in filtered if o["status"] == status]
-
-    if supplier:
-        filtered = [o for o in filtered if o["supplier_type"] == supplier]
-
-    # Sort by created_at descending
-    filtered = sorted(filtered, key=lambda x: x["created_at"], reverse=True)
-
-    # Paginate
-    total = len(filtered)
-    start = (page - 1) * page_size
-    end = start + page_size
-    orders = filtered[start:end]
-
-    return {
-        "orders": orders,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
+    """List orders with pagination and filters from SQL Server"""
+    try:
+        orders, total = sqlserver_db.get_orders(
+            status=status,
+            supplier=supplier,
+            page=page,
+            page_size=page_size
+        )
+        return {
+            "orders": orders,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.get("/api/orders/{order_id}", response_model=OrderResponse)
 async def get_order(order_id: str, current_user: User = Depends(get_current_active_user)):
-    """Get order details"""
-    for order in _orders_db:
-        if order["id"] == order_id:
+    """Get order details from SQL Server"""
+    try:
+        order = sqlserver_db.get_order_by_id(order_id)
+        if order:
             return order
-    raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Order not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.post("/api/orders/{order_id}/retry")
 async def retry_order(order_id: str, current_user: User = Depends(get_current_active_user)):
     """Retry failed order"""
-    for order in _orders_db:
-        if order["id"] == order_id:
-            if order["status"] == "failed":
-                order["status"] = "pending"
-                order["error_message"] = None
-                # Add audit log
-                _audit_logs_db.append({
-                    "id": f"audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-                    "user": current_user.username,
-                    "action": "order_retry",
-                    "resource_type": "order",
-                    "resource_id": order_id,
-                    "details": f"Sipariş yeniden deneme kuyruğuna alındı: {order['order_code']}",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "ip_address": "127.0.0.1"
-                })
-                return {"status": "queued", "order_id": order_id}
-            else:
-                raise HTTPException(status_code=400, detail="Order is not in failed status")
-    raise HTTPException(status_code=404, detail="Order not found")
+    try:
+        order = sqlserver_db.get_order_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if order["status"] != "failed":
+            raise HTTPException(status_code=400, detail="Order is not in failed status")
+
+        # Update order status to pending
+        sqlserver_db.update_order_status(order_id, "PENDING")
+
+        # Add audit log
+        user = sqlserver_db.get_user_by_username(current_user.username)
+        user_id = user["id"] if user else None
+        sqlserver_db.create_audit_log(
+            user_id=user_id,
+            action="order_retry",
+            resource_type="order",
+            resource_id=order_id,
+            details=f"Sipariş yeniden deneme kuyruğuna alındı: {order['order_code']}",
+            ip_address="127.0.0.1"
+        )
+
+        return {"status": "queued", "order_id": order_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.get("/api/orders/{order_id}/logs")
 async def get_order_logs(order_id: str, current_user: User = Depends(get_current_active_user)):
-    """Get step-by-step operation logs for an order"""
-    logs = [log for log in _order_logs_db if log["order_id"] == order_id]
-    logs = sorted(logs, key=lambda x: x["step"])
-    return {"logs": logs, "total": len(logs)}
+    """Get step-by-step operation logs for an order from SQL Server"""
+    try:
+        logs = sqlserver_db.get_order_logs(order_id)
+        return {"logs": logs, "total": len(logs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get("/api/screenshots/{path:path}")
+async def get_screenshot(path: str, current_user: User = Depends(get_current_active_user)):
+    """Serve screenshot files for order logs"""
+    # Build the full path - screenshots are stored in the robot app's screenshots directory
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    screenshot_path = os.path.join(base_dir, "screenshots", path)
+
+    # Security check - ensure path doesn't escape screenshots directory
+    real_base = os.path.realpath(os.path.join(base_dir, "screenshots"))
+    real_path = os.path.realpath(screenshot_path)
+
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not os.path.exists(screenshot_path):
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+
+    # Determine media type based on extension
+    ext = os.path.splitext(screenshot_path)[1].lower()
+    media_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp"
+    }
+    media_type = media_types.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        path=screenshot_path,
+        media_type=media_type,
+        filename=os.path.basename(screenshot_path)
+    )
+
+
+@app.get("/api/orders/{order_id}/attachment")
+async def get_order_attachment(order_id: str, current_user: User = Depends(get_current_active_user)):
+    """Download the Excel attachment for an order"""
+    try:
+        order = sqlserver_db.get_order_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        attachment_path = order.get('attachment_path')
+        attachment_filename = order.get('attachment_filename')
+
+        if not attachment_path or not os.path.exists(attachment_path):
+            raise HTTPException(status_code=404, detail="Attachment not found")
+
+        return FileResponse(
+            path=attachment_path,
+            filename=attachment_filename or os.path.basename(attachment_path),
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 # ============================================
@@ -515,61 +657,51 @@ async def _run_order_robot(order_id: str, order_info: dict):
         # Run robot
         result = await order_worker.process_order_manual(order_info)
 
-        # Update order status based on result
-        for order in _orders_db:
-            if order["id"] == order_id:
-                if result.success:
-                    order["status"] = "completed"
-                    order["completed_at"] = datetime.utcnow().isoformat()
-                    order["error_message"] = None
+        # Update order status based on result in SQL Server
+        if result.success:
+            sqlserver_db.update_order_status(
+                order_id,
+                "COMPLETED",
+                portal_order_number=result.portal_order_no
+            )
 
-                    # Add success log
-                    step_count = len([l for l in _order_logs_db if l["order_id"] == order_id])
-                    _order_logs_db.append({
-                        "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
-                        "order_id": order_id,
-                        "step": step_count + 1,
-                        "action": "complete",
-                        "message": f"Siparis basariyla tamamlandi: {result.portal_order_no or 'N/A'}",
-                        "status": "success",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-                else:
-                    order["status"] = "failed"
-                    order["error_message"] = result.message
+            # Add success log
+            sqlserver_db.add_order_log(
+                order_id=order_id,
+                action="complete",
+                status="SUCCESS",
+                message=f"Siparis basariyla tamamlandi: {result.portal_order_no or 'N/A'}"
+            )
+        else:
+            sqlserver_db.update_order_status(
+                order_id,
+                "FAILED",
+                error_message=result.message
+            )
 
-                    # Add error log
-                    step_count = len([l for l in _order_logs_db if l["order_id"] == order_id])
-                    _order_logs_db.append({
-                        "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
-                        "order_id": order_id,
-                        "step": step_count + 1,
-                        "action": "error",
-                        "message": f"Siparis isleme hatasi: {result.message}",
-                        "status": "error",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-                break
+            # Add error log
+            sqlserver_db.add_order_log(
+                order_id=order_id,
+                action="error",
+                status="ERROR",
+                message=f"Siparis isleme hatasi: {result.message}"
+            )
 
     except Exception as e:
-        # Update order as failed
-        for order in _orders_db:
-            if order["id"] == order_id:
-                order["status"] = "failed"
-                order["error_message"] = str(e)
-                break
+        # Update order as failed in SQL Server
+        sqlserver_db.update_order_status(
+            order_id,
+            "FAILED",
+            error_message=str(e)
+        )
 
         # Add error log
-        step_count = len([l for l in _order_logs_db if l["order_id"] == order_id])
-        _order_logs_db.append({
-            "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
-            "order_id": order_id,
-            "step": step_count + 1,
-            "action": "error",
-            "message": f"Robot hatasi: {str(e)}",
-            "status": "error",
-            "timestamp": datetime.utcnow().isoformat()
-        })
+        sqlserver_db.add_order_log(
+            order_id=order_id,
+            action="error",
+            status="ERROR",
+            message=f"Robot hatasi: {str(e)}"
+        )
 
 
 @app.post("/api/orders/{order_id}/process", response_model=ProcessOrderResponse)
@@ -588,81 +720,79 @@ async def process_order(
     """
     import asyncio
 
-    # Find order
-    order = None
-    for o in _orders_db:
-        if o["id"] == order_id:
-            order = o
-            break
+    try:
+        # Find order from SQL Server
+        order = sqlserver_db.get_order_by_id(order_id)
 
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
 
-    # Check if order can be processed
-    if order["status"] not in ("pending", "failed"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Order cannot be processed. Current status: {order['status']}"
+        # Check if order can be processed
+        if order["status"] not in ("pending", "failed"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Order cannot be processed. Current status: {order['status']}"
+            )
+
+        # Add audit log
+        user = sqlserver_db.get_user_by_username(current_user.username)
+        user_id = user["id"] if user else None
+        sqlserver_db.create_audit_log(
+            user_id=user_id,
+            action="order_process_trigger",
+            resource_type="order",
+            resource_id=order_id,
+            details=f"Siparis manuel olarak isleme alindi: {order['order_code']}",
+            ip_address="127.0.0.1"
         )
 
-    # Add audit log
-    _audit_logs_db.append({
-        "id": f"audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
-        "user": current_user.username,
-        "action": "order_process_trigger",
-        "resource_type": "order",
-        "resource_id": order_id,
-        "details": f"Siparis manuel olarak isleme alindi: {order['order_code']}",
-        "timestamp": datetime.utcnow().isoformat(),
-        "ip_address": "127.0.0.1"
-    })
+        # Update status to processing
+        sqlserver_db.update_order_status(order_id, "PROCESSING")
 
-    # Update status to processing
-    order["status"] = "processing"
+        # Prepare order info for worker
+        order_items = []
+        if order["supplier_type"] == "mutlu_aku":
+            order_items = [
+                {"product_code": "AF-CST-AUEFB-04-0630600-L52B13-01-0", "product_name": "Castrol 12/63 EFB", "quantity": 72},
+                {"product_code": "AF-CST-AUEFB-04-0720720-L53B13-01-0", "product_name": "Castrol 12/72 EFB", "quantity": 66},
+            ]
+        else:  # mann_hummel
+            order_items = [
+                {"product_code": "AP 139/2", "product_name": "Hava Filtresi", "quantity": 50},
+                {"product_code": "HU 7010 Z", "product_name": "Yag Filtresi", "quantity": 30},
+            ]
 
-    # Prepare order info for worker
-    order_items = []
-    if order["supplier_type"] == "mutlu_aku":
-        order_items = [
-            {"product_code": "AF-CST-AUEFB-04-0630600-L52B13-01-0", "product_name": "Castrol 12/63 EFB", "quantity": 72},
-            {"product_code": "AF-CST-AUEFB-04-0720720-L53B13-01-0", "product_name": "Castrol 12/72 EFB", "quantity": 66},
-        ]
-    else:  # mann_hummel
-        order_items = [
-            {"product_code": "AP 139/2", "product_name": "Hava Filtresi", "quantity": 50},
-            {"product_code": "HU 7010 Z", "product_name": "Yag Filtresi", "quantity": 30},
-        ]
+        order_info = {
+            "id": order["id"],
+            "order_code": order["order_code"],
+            "supplier_type": "MUTLU" if order["supplier_type"] == "mutlu_aku" else "MANN",
+            "caspar_order_no": order.get("order_code"),
+            "customer_code": order.get("customer_name", ""),
+            "items": order_items,
+        }
 
-    order_info = {
-        "id": order["id"],
-        "order_code": order["order_code"],
-        "supplier_type": "MUTLU" if order["supplier_type"] == "mutlu_aku" else "MANN",
-        "caspar_order_no": order.get("order_code"),
-        "customer_code": order.get("customer_name", ""),
-        "items": order_items,
-    }
+        # Add initial processing log to SQL Server
+        sqlserver_db.add_order_log(
+            order_id=order_id,
+            action="process_started",
+            status="PROCESSING",
+            message=f"Siparis isleme baslatildi - Kullanici: {current_user.username}"
+        )
 
-    # Add initial processing log
-    _order_logs_db.append({
-        "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
-        "order_id": order_id,
-        "step": len([l for l in _order_logs_db if l["order_id"] == order_id]) + 1,
-        "action": "process_started",
-        "message": f"Siparis isleme baslatildi - Kullanici: {current_user.username}",
-        "status": "processing",
-        "timestamp": datetime.utcnow().isoformat()
-    })
+        # Start background task (non-blocking)
+        asyncio.create_task(_run_order_robot(order_id, order_info))
 
-    # Start background task (non-blocking)
-    asyncio.create_task(_run_order_robot(order_id, order_info))
-
-    return ProcessOrderResponse(
-        status="processing",
-        order_id=order_id,
-        order_code=order["order_code"],
-        supplier_type=order["supplier_type"],
-        message="Order processing started in background. Check order logs for progress."
-    )
+        return ProcessOrderResponse(
+            status="processing",
+            order_id=order_id,
+            order_code=order["order_code"],
+            supplier_type=order["supplier_type"],
+            message="Order processing started in background. Check order logs for progress."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.get("/api/emails")
@@ -672,27 +802,28 @@ async def list_emails(
     status: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
 ):
-    """List processed emails"""
-    # Filter by status if provided
-    filtered = _emails_db
-    if status:
-        filtered = [e for e in _emails_db if e.get("status") == status]
+    """List processed emails from SQL Server"""
+    try:
+        emails, total = sqlserver_db.get_emails(
+            status=status,
+            page=page,
+            page_size=page_size
+        )
 
-    # Sort by received_at descending
-    filtered = sorted(filtered, key=lambda x: x.get("received_at", ""), reverse=True)
+        # Add computed fields for UI compatibility
+        for email in emails:
+            email['from_address'] = email.get('from', email.get('from_address', ''))
+            email['has_attachments'] = False  # TODO: track in DB
+            email['attachment_count'] = 0  # TODO: track in DB
 
-    # Paginate
-    total = len(filtered)
-    start = (page - 1) * page_size
-    end = start + page_size
-    emails = filtered[start:end]
-
-    return {
-        "emails": emails,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
+        return {
+            "emails": emails,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.post("/api/emails/fetch")
@@ -934,30 +1065,22 @@ async def get_audit_logs(
     action: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Get user audit logs"""
-    filtered = _audit_logs_db
-
-    if user:
-        filtered = [l for l in filtered if l["user"] == user]
-
-    if action:
-        filtered = [l for l in filtered if l["action"] == action]
-
-    # Sort by timestamp descending
-    filtered = sorted(filtered, key=lambda x: x["timestamp"], reverse=True)
-
-    # Paginate
-    total = len(filtered)
-    start = (page - 1) * page_size
-    end = start + page_size
-    paginated = filtered[start:end]
-
-    return {
-        "logs": paginated,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
+    """Get user audit logs from SQL Server"""
+    try:
+        logs, total = sqlserver_db.get_audit_logs(
+            user=user,
+            action=action,
+            page=page,
+            page_size=page_size
+        )
+        return {
+            "logs": logs,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.post("/api/orders/manual")
@@ -1098,8 +1221,12 @@ _next_user_id = 5
 
 @app.get("/api/users", response_model=List[UserResponse])
 async def list_users(current_user: User = Depends(get_current_active_user)):
-    """List all users"""
-    return _users_db
+    """List all users from SQL Server"""
+    try:
+        users = sqlserver_db.get_users()
+        return users
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.post("/api/users/create-with-email", response_model=UserResponse)
@@ -1108,38 +1235,34 @@ async def create_user_with_email(
     current_user: User = Depends(get_current_active_user)
 ):
     """Create a new user and send email notification"""
-    global _next_user_id
-
-    # Check if username already exists
-    for u in _users_db:
-        if u["username"] == request.username:
+    try:
+        # Check if username already exists
+        existing_user = sqlserver_db.get_user_by_username(request.username)
+        if existing_user:
             raise HTTPException(status_code=400, detail="Username already exists")
-        if u["email"] == request.email:
+
+        existing_email = sqlserver_db.get_user_by_email(request.email)
+        if existing_email:
             raise HTTPException(status_code=400, detail="Email already exists")
 
-    # Generate password if not provided
-    password = request.password or generate_random_password()
+        # Generate password if not provided
+        password = request.password or generate_random_password()
 
-    new_user = {
-        "id": _next_user_id,
-        "username": request.username,
-        "email": request.email,
-        "full_name": request.full_name or "",
-        "role": request.role,
-        "is_active": True,
-        "receive_notifications": True,
-        "created_at": datetime.utcnow().isoformat(),
-        "hashed_password": get_password_hash(password),
-    }
-    _users_db.append(new_user)
-    _next_user_id += 1
+        # Create user in SQL Server
+        new_user = sqlserver_db.create_user(
+            username=request.username,
+            email=request.email,
+            hashed_password=get_password_hash(password),
+            full_name=request.full_name or "",
+            role=request.role
+        )
 
-    # Send welcome email
-    email_sender = EmailSender()
-    email_sent = email_sender.send_email(
-        to=request.email,
-        subject="DoruMake - Hoş Geldiniz",
-        body=f"""Merhaba {request.full_name or request.username},
+        # Send welcome email
+        email_sender = EmailSender()
+        email_sent = email_sender.send_email(
+            to=request.email,
+            subject="DoruMake - Hoş Geldiniz",
+            body=f"""Merhaba {request.full_name or request.username},
 
 DoruMake sistemine hoş geldiniz!
 
@@ -1152,13 +1275,17 @@ Giriş adresi: https://93-94-251-138.sslip.io/login
 
 İyi çalışmalar,
 DoruMake Ekibi"""
-    )
+        )
 
-    if not email_sent:
-        # Log warning but don't fail the request
-        print(f"Warning: Could not send welcome email to {request.email}")
+        if not email_sent:
+            # Log warning but don't fail the request
+            print(f"Warning: Could not send welcome email to {request.email}")
 
-    return new_user
+        return new_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.put("/api/users/{user_id}", response_model=UserResponse)
@@ -1167,22 +1294,28 @@ async def update_user(
     request: UpdateUserRequest,
     current_user: User = Depends(get_current_active_user)
 ):
-    """Update a user"""
-    for user in _users_db:
-        if user["id"] == user_id:
-            if request.email is not None:
-                user["email"] = request.email
-            if request.full_name is not None:
-                user["full_name"] = request.full_name
-            if request.role is not None:
-                user["role"] = request.role
-            if request.is_active is not None:
-                user["is_active"] = request.is_active
-            if request.receive_notifications is not None:
-                user["receive_notifications"] = request.receive_notifications
-            return user
+    """Update a user in SQL Server"""
+    try:
+        # Check if user exists
+        existing_user = sqlserver_db.get_user_by_id(user_id)
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    raise HTTPException(status_code=404, detail="User not found")
+        # Update user
+        updated_user = sqlserver_db.update_user(
+            user_id,
+            email=request.email,
+            full_name=request.full_name,
+            role=request.role,
+            is_active=request.is_active,
+            receive_notifications=request.receive_notifications
+        )
+
+        return updated_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.delete("/api/users/{user_id}")
@@ -1190,17 +1323,25 @@ async def delete_user(
     user_id: int,
     current_user: User = Depends(get_current_active_user)
 ):
-    """Delete a user"""
-    global _users_db
+    """Delete a user from SQL Server"""
+    try:
+        # Check if user exists
+        existing_user = sqlserver_db.get_user_by_id(user_id)
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    for i, user in enumerate(_users_db):
-        if user["id"] == user_id:
-            if user["username"] == "admin":
-                raise HTTPException(status_code=400, detail="Cannot delete admin user")
-            _users_db.pop(i)
+        if existing_user["username"] == "admin":
+            raise HTTPException(status_code=400, detail="Cannot delete admin user")
+
+        deleted = sqlserver_db.delete_user(user_id)
+        if deleted:
             return {"status": "deleted", "user_id": user_id}
-
-    raise HTTPException(status_code=404, detail="User not found")
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete user")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @app.post("/api/users/{user_id}/reset-password")
@@ -1209,18 +1350,23 @@ async def reset_user_password(
     current_user: User = Depends(get_current_active_user)
 ):
     """Reset user password and send email"""
-    for user in _users_db:
-        if user["id"] == user_id:
-            # Generate new password
-            new_password = generate_random_password()
-            user["hashed_password"] = get_password_hash(new_password)
+    try:
+        user = sqlserver_db.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-            # Send password reset email
-            email_sender = EmailSender()
-            email_sent = email_sender.send_email(
-                to=user["email"],
-                subject="DoruMake - Şifre Sıfırlama",
-                body=f"""Merhaba {user.get('full_name', user['username'])},
+        # Generate new password
+        new_password = generate_random_password()
+
+        # Update password in database
+        sqlserver_db.update_user(user_id, hashed_password=get_password_hash(new_password))
+
+        # Send password reset email
+        email_sender = EmailSender()
+        email_sent = email_sender.send_email(
+            to=user["email"],
+            subject="DoruMake - Şifre Sıfırlama",
+            body=f"""Merhaba {user.get('full_name', user['username'])},
 
 Şifreniz sıfırlandı.
 
@@ -1232,15 +1378,17 @@ Giriş adresi: https://93-94-251-138.sslip.io/login
 
 İyi çalışmalar,
 DoruMake Ekibi"""
-            )
+        )
 
-            return {
-                "status": "password_reset",
-                "user_id": user_id,
-                "message": "Password reset email sent" if email_sent else "Password reset but email not sent (SMTP not configured)"
-            }
-
-    raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "status": "password_reset",
+            "user_id": user_id,
+            "message": "Password reset email sent" if email_sent else "Password reset but email not sent (SMTP not configured)"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 # ============================================
@@ -1420,12 +1568,16 @@ def _send_notification_to_all_users(template_name: str, params: dict) -> dict:
         subject = subject.replace(placeholder, str(value))
         body = body.replace(placeholder, str(value))
 
-    # Get recipients
-    recipients = [
-        user["email"]
-        for user in _users_db
-        if user.get("receive_notifications", True) and user.get("is_active", True)
-    ]
+    # Get recipients from SQL Server
+    try:
+        users = sqlserver_db.get_users()
+        recipients = [
+            user["email"]
+            for user in users
+            if user.get("receive_notifications", True) and user.get("is_active", True)
+        ]
+    except Exception:
+        recipients = []
 
     if not recipients:
         return {"success": False, "error": "No recipients with notifications enabled"}
