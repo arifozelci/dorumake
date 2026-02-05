@@ -30,10 +30,11 @@ class MannHummelRobot(BaseRobot):
 
     # Selectors
     SELECTORS = {
-        # Login
-        "username_input": "input[name='username'], input[id='username'], input[type='email'], input[type='text']",
-        "password_input": "input[name='password'], input[id='password'], input[type='password']",
-        "login_button": "button[type='submit'], input[type='submit'], .login-btn, button:has-text('Login')",
+        # Login - Okta two-step login (login.tecalliance.net)
+        "username_input": "input[name='identifier'], input[name='username'], input[id='idp-discovery-username'], input[id='okta-signin-username']",
+        "next_button": "input[type='submit'][value='İleri'], input[type='submit'][value='Next'], button:has-text('İleri'), button:has-text('Next'), input.button-primary",
+        "password_input": "input[name='credentials.passcode'], input[name='password'], input[id='okta-signin-password'], input[type='password']",
+        "login_button": "input[type='submit'][value='Oturum Aç'], input[type='submit'][value='Sign In'], button:has-text('Oturum'), button:has-text('Sign In'), input.button-primary",
 
         # Menu
         "menu_query_order": "text=Sorgulama ve sipariş, text=Query and Order",
@@ -125,12 +126,15 @@ class MannHummelRobot(BaseRobot):
         return self.csv_file_path
 
     async def login(self) -> None:
-        """Portal'a giriş yap"""
-        robot_logger.info(f"[{self.SUPPLIER_NAME}] Logging in...")
+        """Portal'a giriş yap - Okta two-step login"""
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Logging in via Okta...")
+
+        # Wait for redirect to login.tecalliance.net
+        # The portal redirects to Okta for authentication
+        await self.page.wait_for_timeout(3000)
 
         # Handle cookie consent popup if present
         try:
-            # Try to click "Continue without consent" or similar button
             consent_selectors = [
                 "button:has-text('Continue without consent')",
                 "button:has-text('Ohne Zustimmung fortfahren')",
@@ -144,7 +148,7 @@ class MannHummelRobot(BaseRobot):
             ]
             for selector in consent_selectors:
                 try:
-                    consent_btn = await self.page.wait_for_selector(selector, timeout=3000)
+                    consent_btn = await self.page.wait_for_selector(selector, timeout=2000)
                     if consent_btn:
                         await consent_btn.click()
                         robot_logger.info(f"[{self.SUPPLIER_NAME}] Dismissed cookie consent popup")
@@ -153,31 +157,95 @@ class MannHummelRobot(BaseRobot):
                 except:
                     continue
         except Exception as e:
-            robot_logger.debug(f"[{self.SUPPLIER_NAME}] No cookie popup found or error: {e}")
+            robot_logger.debug(f"[{self.SUPPLIER_NAME}] No cookie popup found: {e}")
 
-        # Wait for login form
-        await self.wait_for_element(self.SELECTORS["username_input"])
+        # STEP 1: Enter username
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Step 1: Entering username...")
 
-        # Fill credentials
-        await self.fill_input(self.SELECTORS["username_input"], settings.mann_hummel.username)
-        await self.fill_input(self.SELECTORS["password_input"], settings.mann_hummel.password)
+        # Wait for username input field (Okta login page)
+        username_input = await self.page.wait_for_selector(
+            self.SELECTORS["username_input"],
+            timeout=30000,
+            state="visible"
+        )
+        if not username_input:
+            raise RobotError(message="Username input not found", step=RobotStep.LOGIN)
 
-        # Click login
-        await self.click_element(self.SELECTORS["login_button"])
+        # Clear and fill username
+        await username_input.fill("")
+        await username_input.fill(settings.mann_hummel.username)
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Username entered: {settings.mann_hummel.username}")
 
-        # Wait for navigation
-        await self.wait_for_navigation()
+        # Click "İleri" (Next) button
+        await self.page.wait_for_timeout(500)
+        next_btn = await self.page.wait_for_selector(
+            self.SELECTORS["next_button"],
+            timeout=5000,
+            state="visible"
+        )
+        if next_btn:
+            await next_btn.click()
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Clicked Next button")
+        else:
+            # Try pressing Enter
+            await username_input.press("Enter")
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Pressed Enter to proceed")
 
-        # Verify login success
-        try:
-            await self.page.wait_for_selector(self.SELECTORS["username_input"], state="hidden", timeout=5000)
-        except PlaywrightTimeout:
+        # Wait for password page to load
+        await self.page.wait_for_timeout(3000)
+
+        # STEP 2: Enter password
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Step 2: Entering password...")
+
+        # Wait for password input field
+        password_input = await self.page.wait_for_selector(
+            self.SELECTORS["password_input"],
+            timeout=30000,
+            state="visible"
+        )
+        if not password_input:
+            raise RobotError(message="Password input not found", step=RobotStep.LOGIN)
+
+        # Fill password
+        await password_input.fill(settings.mann_hummel.password)
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Password entered")
+
+        # Click "Oturum Aç" (Sign In) button
+        await self.page.wait_for_timeout(500)
+        login_btn = await self.page.wait_for_selector(
+            self.SELECTORS["login_button"],
+            timeout=5000,
+            state="visible"
+        )
+        if login_btn:
+            await login_btn.click()
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Clicked Sign In button")
+        else:
+            # Try pressing Enter
+            await password_input.press("Enter")
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Pressed Enter to login")
+
+        # Wait for redirect back to TecCom portal
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Waiting for redirect to portal...")
+        await self.page.wait_for_timeout(5000)
+
+        # Verify login success - should be redirected back to teccom
+        current_url = self.page.url
+        if "login.tecalliance.net" in current_url:
+            # Still on login page - check for error
+            error_el = await self.page.query_selector(".okta-form-infobox-error, .o-form-error-container")
+            if error_el:
+                error_text = await error_el.text_content()
+                raise RobotError(
+                    message=f"Login failed: {error_text}",
+                    step=RobotStep.LOGIN
+                )
             raise RobotError(
-                message="Login failed - credentials may be invalid",
+                message="Login failed - still on login page",
                 step=RobotStep.LOGIN
             )
 
-        robot_logger.info(f"[{self.SUPPLIER_NAME}] Login successful")
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Login successful! Redirected to: {current_url}")
 
     async def navigate_to_file_upload(self) -> None:
         """Dosya yükleme ekranına git"""
