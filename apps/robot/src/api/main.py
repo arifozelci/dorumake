@@ -11,6 +11,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from src.config import settings
+
 from src.api.auth import (
     authenticate_user,
     create_access_token,
@@ -144,14 +145,19 @@ class UpdateTemplateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
+class LoginRequest(BaseModel):
+    """JSON login request model"""
+    username: str
+    password: str
+
+
 # ============================================
 # AUTH ENDPOINTS
 # ============================================
 
-@app.post("/api/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login endpoint - returns JWT token"""
-    user = authenticate_user(form_data.username, form_data.password)
+def _create_login_response(username: str, password: str) -> dict:
+    """Helper function to authenticate and create token response"""
+    user = authenticate_user(username, password)
     if not user:
         raise HTTPException(
             status_code=401,
@@ -167,6 +173,25 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     }
+
+
+@app.post("/api/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login endpoint (form-encoded) - returns JWT token
+
+    Accepts application/x-www-form-urlencoded data.
+    For JSON requests, use /api/auth/login/json endpoint.
+    """
+    return _create_login_response(form_data.username, form_data.password)
+
+
+@app.post("/api/auth/login/json", response_model=Token)
+async def login_json(request: LoginRequest):
+    """Login endpoint (JSON) - returns JWT token
+
+    Accepts application/json data with username and password fields.
+    """
+    return _create_login_response(request.username, request.password)
 
 
 @app.get("/api/auth/me")
@@ -458,6 +483,186 @@ async def get_order_logs(order_id: str, current_user: User = Depends(get_current
     logs = [log for log in _order_logs_db if log["order_id"] == order_id]
     logs = sorted(logs, key=lambda x: x["step"])
     return {"logs": logs, "total": len(logs)}
+
+
+# ============================================
+# ORDER PROCESSING ENDPOINT
+# ============================================
+
+class ProcessOrderResponse(BaseModel):
+    status: str
+    order_id: str
+    order_code: str
+    supplier_type: str
+    message: str
+    portal_order_no: Optional[str] = None
+    error: Optional[str] = None
+
+
+async def _run_order_robot(order_id: str, order_info: dict):
+    """
+    Background task to run the robot for order processing
+
+    Args:
+        order_id: Order ID
+        order_info: Order information dict
+    """
+    from src.workers.order_worker import OrderWorker
+
+    order_worker = OrderWorker()
+
+    try:
+        # Run robot
+        result = await order_worker.process_order_manual(order_info)
+
+        # Update order status based on result
+        for order in _orders_db:
+            if order["id"] == order_id:
+                if result.success:
+                    order["status"] = "completed"
+                    order["completed_at"] = datetime.utcnow().isoformat()
+                    order["error_message"] = None
+
+                    # Add success log
+                    step_count = len([l for l in _order_logs_db if l["order_id"] == order_id])
+                    _order_logs_db.append({
+                        "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
+                        "order_id": order_id,
+                        "step": step_count + 1,
+                        "action": "complete",
+                        "message": f"Siparis basariyla tamamlandi: {result.portal_order_no or 'N/A'}",
+                        "status": "success",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                else:
+                    order["status"] = "failed"
+                    order["error_message"] = result.message
+
+                    # Add error log
+                    step_count = len([l for l in _order_logs_db if l["order_id"] == order_id])
+                    _order_logs_db.append({
+                        "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
+                        "order_id": order_id,
+                        "step": step_count + 1,
+                        "action": "error",
+                        "message": f"Siparis isleme hatasi: {result.message}",
+                        "status": "error",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                break
+
+    except Exception as e:
+        # Update order as failed
+        for order in _orders_db:
+            if order["id"] == order_id:
+                order["status"] = "failed"
+                order["error_message"] = str(e)
+                break
+
+        # Add error log
+        step_count = len([l for l in _order_logs_db if l["order_id"] == order_id])
+        _order_logs_db.append({
+            "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
+            "order_id": order_id,
+            "step": step_count + 1,
+            "action": "error",
+            "message": f"Robot hatasi: {str(e)}",
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+
+@app.post("/api/orders/{order_id}/process", response_model=ProcessOrderResponse)
+async def process_order(
+    order_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Manually trigger order processing with robot
+
+    This endpoint will:
+    1. Find the order in database
+    2. Determine supplier type (MUTLU or MANN)
+    3. Launch the appropriate robot to process the order in background
+    4. Return immediately with processing status
+    """
+    import asyncio
+
+    # Find order
+    order = None
+    for o in _orders_db:
+        if o["id"] == order_id:
+            order = o
+            break
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Check if order can be processed
+    if order["status"] not in ("pending", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Order cannot be processed. Current status: {order['status']}"
+        )
+
+    # Add audit log
+    _audit_logs_db.append({
+        "id": f"audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
+        "user": current_user.username,
+        "action": "order_process_trigger",
+        "resource_type": "order",
+        "resource_id": order_id,
+        "details": f"Siparis manuel olarak isleme alindi: {order['order_code']}",
+        "timestamp": datetime.utcnow().isoformat(),
+        "ip_address": "127.0.0.1"
+    })
+
+    # Update status to processing
+    order["status"] = "processing"
+
+    # Prepare order info for worker
+    order_items = []
+    if order["supplier_type"] == "mutlu_aku":
+        order_items = [
+            {"product_code": "AF-CST-AUEFB-04-0630600-L52B13-01-0", "product_name": "Castrol 12/63 EFB", "quantity": 72},
+            {"product_code": "AF-CST-AUEFB-04-0720720-L53B13-01-0", "product_name": "Castrol 12/72 EFB", "quantity": 66},
+        ]
+    else:  # mann_hummel
+        order_items = [
+            {"product_code": "AP 139/2", "product_name": "Hava Filtresi", "quantity": 50},
+            {"product_code": "HU 7010 Z", "product_name": "Yag Filtresi", "quantity": 30},
+        ]
+
+    order_info = {
+        "id": order["id"],
+        "order_code": order["order_code"],
+        "supplier_type": "MUTLU" if order["supplier_type"] == "mutlu_aku" else "MANN",
+        "caspar_order_no": order.get("order_code"),
+        "customer_code": order.get("customer_name", ""),
+        "items": order_items,
+    }
+
+    # Add initial processing log
+    _order_logs_db.append({
+        "id": f"log-{order_id}-{datetime.utcnow().strftime('%H%M%S')}",
+        "order_id": order_id,
+        "step": len([l for l in _order_logs_db if l["order_id"] == order_id]) + 1,
+        "action": "process_started",
+        "message": f"Siparis isleme baslatildi - Kullanici: {current_user.username}",
+        "status": "processing",
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+    # Start background task (non-blocking)
+    asyncio.create_task(_run_order_robot(order_id, order_info))
+
+    return ProcessOrderResponse(
+        status="processing",
+        order_id=order_id,
+        order_code=order["order_code"],
+        supplier_type=order["supplier_type"],
+        message="Order processing started in background. Check order logs for progress."
+    )
 
 
 @app.get("/api/emails")

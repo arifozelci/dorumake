@@ -1,5 +1,19 @@
 # Database module
-from .connection import get_db, engine, AsyncSessionLocal
+
+# Lazy import for async connection (requires aioodbc)
+try:
+    from .connection import get_db, engine, AsyncSessionLocal
+except ImportError:
+    get_db = None
+    engine = None
+    AsyncSessionLocal = None
+
+# Sync SQL Server database helper (uses pyodbc)
+try:
+    from .sqlserver import db as sqlserver_db
+except ImportError:
+    sqlserver_db = None
+
 from .models import (
     Supplier,
     Customer,
@@ -21,6 +35,7 @@ __all__ = [
     "get_db",
     "engine",
     "AsyncSessionLocal",
+    "sqlserver_db",
     "Supplier",
     "Customer",
     "CustomerSupplierMapping",
