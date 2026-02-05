@@ -238,41 +238,32 @@ class SQLServerDB:
             params = []
 
             if status:
-                where_conditions.append("o.status = ?")
+                where_conditions.append("status = ?")
                 params.append(status.upper())
 
             if supplier:
-                supplier_code = supplier.upper().replace('_', '-')
-                if 'MUTLU' in supplier_code:
-                    supplier_code = 'MUTLU-AKU'
-                elif 'MANN' in supplier_code:
-                    supplier_code = 'MANN-HUMMEL'
-                where_conditions.append("s.code = ?")
-                params.append(supplier_code)
+                # Normalize supplier type
+                supplier_type = supplier.lower().replace('-', '_')
+                where_conditions.append("supplier_type = ?")
+                params.append(supplier_type)
 
             where_clause = ""
             if where_conditions:
                 where_clause = "WHERE " + " AND ".join(where_conditions)
 
             # Get total count
-            cursor.execute(f"""
-                SELECT COUNT(*)
-                FROM orders o
-                LEFT JOIN suppliers s ON o.supplier_id = s.id
-                {where_clause}
-            """, params)
+            cursor.execute(f"SELECT COUNT(*) FROM orders {where_clause}", params)
             total = cursor.fetchone()[0]
 
             # Get paginated results
             offset = (page - 1) * page_size
             cursor.execute(f"""
-                SELECT o.id, o.order_code, o.caspar_order_no, o.status, o.error_message,
-                       s.code as supplier_type, o.customer_name, o.item_count, o.total_amount,
-                       o.portal_order_no, o.created_at, o.completed_at
-                FROM orders o
-                LEFT JOIN suppliers s ON o.supplier_id = s.id
+                SELECT id, order_code, supplier_type, status, error_message,
+                       customer_name, customer_code, total_items as item_count,
+                       portal_order_number as portal_order_no, created_at, processed_at as completed_at
+                FROM orders
                 {where_clause}
-                ORDER BY o.created_at DESC
+                ORDER BY created_at DESC
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
             """, params + [offset, page_size])
 
@@ -286,10 +277,8 @@ class SQLServerDB:
                     order['completed_at'] = order['completed_at'].isoformat() if isinstance(order['completed_at'], datetime) else str(order['completed_at'])
                 if order.get('status'):
                     order['status'] = order['status'].lower()
-                if order.get('supplier_type'):
-                    order['supplier_type'] = order['supplier_type'].lower().replace('-', '_')
-                if order.get('total_amount'):
-                    order['total_amount'] = float(order['total_amount'])
+                # Calculate total_amount as 0 for now (not in schema)
+                order['total_amount'] = 0
 
             return orders, total
 
@@ -297,12 +286,11 @@ class SQLServerDB:
         """Get order by ID"""
         with self.get_cursor() as cursor:
             cursor.execute("""
-                SELECT o.id, o.order_code, o.caspar_order_no, o.status, o.error_message,
-                       s.code as supplier_type, o.customer_name, o.item_count, o.total_amount,
-                       o.portal_order_no, o.created_at, o.completed_at
-                FROM orders o
-                LEFT JOIN suppliers s ON o.supplier_id = s.id
-                WHERE o.id = ?
+                SELECT id, order_code, supplier_type, status, error_message,
+                       customer_name, customer_code, total_items as item_count,
+                       portal_order_number as portal_order_no, created_at, processed_at as completed_at
+                FROM orders
+                WHERE id = ?
             """, (order_id,))
             row = cursor.fetchone()
             if row:
@@ -313,36 +301,33 @@ class SQLServerDB:
                     order['completed_at'] = order['completed_at'].isoformat() if isinstance(order['completed_at'], datetime) else str(order['completed_at'])
                 if order.get('status'):
                     order['status'] = order['status'].lower()
-                if order.get('supplier_type'):
-                    order['supplier_type'] = order['supplier_type'].lower().replace('-', '_')
-                if order.get('total_amount'):
-                    order['total_amount'] = float(order['total_amount'])
+                order['total_amount'] = 0
                 return order
             return None
 
-    def create_order(self, order_code: str, supplier_id: str, customer_name: str,
-                     item_count: int = 0, total_amount: float = 0,
-                     caspar_order_no: str = None) -> Dict[str, Any]:
+    def create_order(self, order_code: str, supplier_type: str, customer_name: str,
+                     customer_code: str = "", total_items: int = 0,
+                     email_id: str = None) -> Dict[str, Any]:
         """Create a new order"""
         order_id = str(uuid.uuid4())
         with self.get_cursor(commit=True) as cursor:
             cursor.execute("""
-                INSERT INTO orders (id, order_code, caspar_order_no, status, supplier_id,
-                                   customer_name, item_count, total_amount, created_at)
-                VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, GETDATE())
-            """, (order_id, order_code, caspar_order_no, supplier_id, customer_name, item_count, total_amount))
+                INSERT INTO orders (id, order_code, email_id, supplier_type, customer_code,
+                                   customer_name, status, total_items, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, GETDATE())
+            """, (order_id, order_code, email_id, supplier_type, customer_code, customer_name, total_items))
         return self.get_order_by_id(order_id)
 
     def update_order_status(self, order_id: str, status: str, error_message: str = None,
-                            portal_order_no: str = None) -> bool:
+                            portal_order_number: str = None) -> bool:
         """Update order status"""
         with self.get_cursor(commit=True) as cursor:
             if status.upper() == 'COMPLETED':
                 cursor.execute("""
                     UPDATE orders
-                    SET status = ?, error_message = NULL, portal_order_no = ?, completed_at = GETDATE()
+                    SET status = ?, error_message = NULL, portal_order_number = ?, processed_at = GETDATE()
                     WHERE id = ?
-                """, (status.upper(), portal_order_no, order_id))
+                """, (status.upper(), portal_order_number, order_id))
             elif error_message:
                 cursor.execute("""
                     UPDATE orders
@@ -476,19 +461,23 @@ class SQLServerDB:
             """)
             pending = cursor.fetchone()[0]
 
+            # Get queue counts by supplier_type (direct column, not foreign key)
             cursor.execute("""
-                SELECT s.code, COUNT(*) as count
-                FROM orders o
-                JOIN suppliers s ON o.supplier_id = s.id
-                WHERE o.status = 'PENDING'
-                GROUP BY s.code
+                SELECT supplier_type, COUNT(*) as count
+                FROM orders
+                WHERE status = 'PENDING'
+                GROUP BY supplier_type
             """)
             queue_rows = cursor.fetchall()
-            queue_counts = {row[0].lower().replace('-', '_'): row[1] for row in queue_rows}
+            queue_counts = {}
+            for row in queue_rows:
+                if row[0]:
+                    key = row[0].lower().replace('-', '_')
+                    queue_counts[key] = row[1]
 
             cursor.execute("""
                 SELECT COUNT(*) FROM emails
-                WHERE CAST(received_at AS DATE) = CAST(GETDATE() AS DATE)
+                WHERE CAST(created_at AS DATE) = CAST(GETDATE() AS DATE)
             """)
             today_emails = cursor.fetchone()[0]
 
