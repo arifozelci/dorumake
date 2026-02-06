@@ -67,10 +67,10 @@ class MannHummelRobot(BaseRobot):
         "request_button": "button:has-text('TALEP')",
         "order_button": "button:has-text('SİPARİŞ')",
 
-        # Messages
-        "order_number": ".order-number, [class*='order-no'], text=Sipariş No",
-        "success_message": "text=Başarılı, text=Success, .success-message",
-        "error_message": ".error-message, .alert-danger, text=Hata, text=Error",
+        # Messages - single selectors only (Playwright doesn't support comma-separated)
+        "order_number": "[class*='order']",
+        "success_message": ".success-message",
+        "error_message": ".error-message",
 
         # Loading
         "loading": ".loading, .spinner, [class*='loading']"
@@ -850,23 +850,42 @@ class MannHummelRobot(BaseRobot):
         # Wait for order number
         await self.page.wait_for_timeout(5000)
 
-        # Try to extract order number
-        try:
-            order_element = await self.page.query_selector(self.SELECTORS["order_number"])
-            if order_element:
-                self.portal_order_no = await order_element.text_content()
-                self.portal_order_no = self.portal_order_no.strip() if self.portal_order_no else None
-        except Exception as e:
-            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not extract order number: {e}")
+        # Try to extract order number from multiple possible locations
+        order_number_selectors = [
+            "[class*='order-number']",
+            "[class*='order-no']",
+            "[class*='siparis-no']",
+            "text=/Sipariş No[:\\s]*\\d+/",
+            "text=/Order[:\\s]*\\d+/",
+        ]
+        for selector in order_number_selectors:
+            try:
+                order_element = await self.page.query_selector(selector)
+                if order_element:
+                    self.portal_order_no = await order_element.text_content()
+                    self.portal_order_no = self.portal_order_no.strip() if self.portal_order_no else None
+                    if self.portal_order_no:
+                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Found order number with selector {selector}: {self.portal_order_no}")
+                        break
+            except Exception as e:
+                robot_logger.debug(f"[{self.SUPPLIER_NAME}] Order number selector {selector} failed: {e}")
 
-        # Check for errors
-        error_el = await self.page.query_selector(self.SELECTORS["error_message"])
-        if error_el:
-            error_text = await error_el.text_content()
-            raise RobotError(
-                message=f"Order submission failed: {error_text}",
-                step=RobotStep.ORDER_SUBMIT
-            )
+        # Check for errors with multiple selectors
+        error_selectors = [".error-message", ".alert-danger", "[class*='error']"]
+        for selector in error_selectors:
+            try:
+                error_el = await self.page.query_selector(selector)
+                if error_el:
+                    error_text = await error_el.text_content()
+                    if error_text and ("hata" in error_text.lower() or "error" in error_text.lower()):
+                        raise RobotError(
+                            message=f"Order submission failed: {error_text}",
+                            step=RobotStep.ORDER_SUBMIT
+                        )
+            except RobotError:
+                raise
+            except Exception:
+                continue
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Order submitted. Portal order: {self.portal_order_no}")
         return self.portal_order_no or "UNKNOWN"
