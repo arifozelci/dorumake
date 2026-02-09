@@ -63,9 +63,9 @@ class MannHummelRobot(BaseRobot):
         # Product list (to check if CSV was processed)
         "product_list": "table:has-text('Ürün numarası'), .product-list, [class*='product'], [class*='grid']",
 
-        # Submit buttons - TALEP first, then SİPARİŞ
-        "request_button": "button:has-text('TALEP')",
-        "order_button": "button:has-text('SİPARİŞ')",
+        # Submit buttons - TALEP first, then SİPARİŞ (mixed case on actual portal: "Talep", "Sipariş")
+        "request_button": "button:has-text('Talep')",
+        "order_button": "button:has-text('Sipariş')",
 
         # Messages - single selectors only (Playwright doesn't support comma-separated)
         "order_number": "[class*='order']",
@@ -590,19 +590,18 @@ class MannHummelRobot(BaseRobot):
         await self.page.wait_for_timeout(1000)
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Supplier selection completed")
 
-    async def select_customer(self, customer_code: str) -> None:
+    async def select_customer(self, customer_name: str) -> None:
         """
         Müşteri seç (Sapma gösteren sevk yeri adresi) - ZORUNLU ADIM
 
-        PDF'e göre akış:
-        1. "Sapma gösteren sevk yeri adresini kullan:" radio butonuna tıkla
-        2. "Sevk yeri" dropdown'ından müşteriyi seç
-        3. Müşteri kodu "Numara" alanında görünür
+        TecCom dropdown shows customer names with city, e.g.:
+        "HNR OTOM. PETROL İNŞ. NAKL. TUR SAN, 21070, Diyarbakır"
+        We match using the first few words of the customer name from the Excel.
 
         Args:
-            customer_code: Müşteri kodu (TRM56018, TRM56062 vb.)
+            customer_name: Excel'den gelen müşteri adı
         """
-        robot_logger.info(f"[{self.SUPPLIER_NAME}] Selecting customer: {customer_code}")
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Selecting customer: {customer_name}")
 
         # Wait for page to stabilize after supplier selection
         await self.page.wait_for_timeout(2000)
@@ -613,7 +612,7 @@ class MannHummelRobot(BaseRobot):
         radio_selectors = [
             "text=Sapma gösteren sevk yeri adresini kullan",
             "label:has-text('Sapma gösteren sevk yeri')",
-            "input[type='radio'] >> nth=1",  # Second radio button (first is Standart teslimat)
+            "input[type='radio'] >> nth=1",
             "//input[@type='radio']/following-sibling::*[contains(text(),'Sapma')]",
         ]
 
@@ -631,7 +630,6 @@ class MannHummelRobot(BaseRobot):
                 continue
 
         if not clicked:
-            # Take screenshot and raise error
             raise RobotError(
                 message="Could not find 'Sapma gösteren sevk yeri' radio button",
                 step=RobotStep.CUSTOMER_SELECT
@@ -643,76 +641,96 @@ class MannHummelRobot(BaseRobot):
         # STEP 2: Select customer from "Sevk yeri" dropdown
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Step 2: Selecting customer from 'Sevk yeri' dropdown...")
 
-        # The dropdown contains customer names like "DALAY PETROL ÜRÜNLERİ NAKLİYE SAN., 72000"
-        # We need to find the option that contains the customer code (TRM56018)
+        # Build search keywords from customer_name
+        search_terms = []
+        if customer_name:
+            clean_name = customer_name.split('(')[0].strip()
+            words = clean_name.split()
+            if len(words) >= 2:
+                search_terms.append(' '.join(words[:2]))
+            if len(words) >= 1:
+                search_terms.append(words[0])
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer search terms: {search_terms}")
+
+        # Find the "Sevk yeri" dropdown
         dropdown_selectors = [
+            "select[name='shipTo']",
             "select:near(:text('Sevk yeri'))",
+            "div:near(:text('Sevk yeri')) >> select",
             "[class*='select']:near(:text('Sevk yeri'))",
-            "select >> nth=1",  # Second select on page (first is Tedarikçi)
         ]
 
         selected = False
         for dropdown_selector in dropdown_selectors:
             try:
-                # First try to click the dropdown to open it
                 dropdown = await self.page.wait_for_selector(dropdown_selector, timeout=5000)
-                if dropdown:
-                    await dropdown.click()
-                    await self.page.wait_for_timeout(500)
+                if not dropdown:
+                    continue
 
-                    # Look for option containing customer code or name
-                    option_selectors = [
-                        f"option:has-text('{customer_code}')",
-                        f"text={customer_code}",
-                        "option >> nth=0",  # First option if only one customer
-                    ]
+                # Get all options in the dropdown
+                options = await dropdown.evaluate("""
+                    (el) => Array.from(el.options).map((opt, i) => ({
+                        index: i,
+                        value: opt.value,
+                        text: opt.textContent.trim()
+                    }))
+                """)
+                robot_logger.info(f"[{self.SUPPLIER_NAME}] Dropdown has {len(options)} options")
 
-                    for opt_selector in option_selectors:
-                        try:
-                            option = await self.page.wait_for_selector(opt_selector, timeout=3000)
-                            if option:
-                                await option.click()
-                                selected = True
-                                robot_logger.info(f"[{self.SUPPLIER_NAME}] Selected customer option with: {opt_selector}")
-                                break
-                        except:
-                            continue
-
-                    if selected:
+                # Find matching option by customer name
+                matched_option = None
+                for term in search_terms:
+                    term_upper = term.upper()
+                    for opt in options:
+                        if term_upper in opt['text'].upper():
+                            matched_option = opt
+                            robot_logger.info(f"[{self.SUPPLIER_NAME}] Matched customer: '{opt['text']}' with term '{term}'")
+                            break
+                    if matched_option:
                         break
+
+                if matched_option:
+                    await dropdown.select_option(value=matched_option['value'])
+                    selected = True
+                    robot_logger.info(f"[{self.SUPPLIER_NAME}] Selected customer: {matched_option['text']}")
+                    break
+                else:
+                    robot_logger.warning(f"[{self.SUPPLIER_NAME}] No matching customer in dropdown for: {search_terms}")
+                    option_names = [opt['text'][:60] for opt in options[:25]]
+                    robot_logger.info(f"[{self.SUPPLIER_NAME}] Available customers: {option_names}")
+
             except Exception as e:
                 robot_logger.debug(f"[{self.SUPPLIER_NAME}] Dropdown selector failed: {dropdown_selector} - {e}")
                 continue
 
         if not selected:
-            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not select customer {customer_code} from dropdown, trying direct text click...")
-            # Try clicking any element containing customer code
-            try:
-                await self.page.click(f"text={customer_code}")
-                selected = True
-            except:
-                pass
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not select customer, trying text click...")
+            for term in search_terms:
+                try:
+                    await self.page.click(f"text={term}")
+                    selected = True
+                    break
+                except:
+                    continue
 
         await self.page.wait_for_timeout(1000)
-
-        # Verify selection by checking "Numara" field
-        try:
-            numara_field = await self.page.query_selector(f"text={customer_code}")
-            if numara_field:
-                robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer code {customer_code} verified in Numara field")
-        except:
-            pass
-
-        robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer selection completed")
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer selection completed (selected={selected})")
 
     async def submit_request(self) -> None:
-        """TALEP butonu - Sipariş yükleme"""
+        """TALEP butonu - Sipariş yükleme
+
+        After clicking TALEP, the portal processes the CSV and loads product details.
+        This can take seconds to minutes depending on the number of products.
+        We must wait until the content fully loads before proceeding to SİPARİŞ.
+        """
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Submitting request (TALEP)...")
 
         # Click TALEP button - try multiple selectors
         talep_selectors = [
             "button:has-text('TALEP')",
+            "button:has-text('Talep')",
             "text=TALEP",
+            "text=Talep",
             "button >> text=TALEP",
             "[class*='button']:has-text('TALEP')",
         ]
@@ -732,17 +750,61 @@ class MannHummelRobot(BaseRobot):
         if not clicked:
             raise RobotError(message="Could not find TALEP button", step=RobotStep.REQUEST_SUBMIT)
 
-        # Wait for loading
+        # Wait for the page to fully load after TALEP
+        # TALEP triggers server-side processing of CSV - this can take minutes for large orders
+        # We must wait until the product content appears on screen
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Waiting for TALEP to process and content to load...")
+
+        # Strategy 1: Wait for network to settle (all XHR/fetch requests complete)
         try:
-            await self.page.wait_for_selector(self.SELECTORS["loading"], state="visible", timeout=2000)
-            await self.page.wait_for_selector(self.SELECTORS["loading"], state="hidden", timeout=60000)
+            await self.page.wait_for_load_state("networkidle", timeout=120000)
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Network is idle after TALEP")
         except PlaywrightTimeout:
-            pass  # Loading indicator may not appear
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Network idle timeout after 120s, continuing...")
 
-        # Wait additional time for processing
-        await self.page.wait_for_timeout(3000)
+        # Strategy 2: Poll for content changes - wait for product table/data to appear
+        # TecCom shows product details (Ürün numarası, prices, quantities) after TALEP
+        content_loaded = False
+        content_selectors = [
+            "table",                          # Any table (product list)
+            "[class*='product']",             # Product-related elements
+            "[class*='grid']",                # Grid layout for products
+            "[class*='article']",             # Article/product entries
+            "tr:has-text('Ürün')",            # Table row with product text
+            "[class*='item']",                # Item elements
+            "[class*='result']",              # Result elements
+        ]
 
-        robot_logger.info(f"[{self.SUPPLIER_NAME}] Request submitted")
+        max_wait = 120  # seconds
+        poll_interval = 2  # seconds
+        elapsed = 0
+
+        while elapsed < max_wait and not content_loaded:
+            for selector in content_selectors:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element:
+                        is_visible = await element.is_visible()
+                        if is_visible:
+                            robot_logger.info(f"[{self.SUPPLIER_NAME}] Content loaded - found: {selector} (after {elapsed}s)")
+                            content_loaded = True
+                            break
+                except Exception:
+                    continue
+
+            if not content_loaded:
+                await self.page.wait_for_timeout(poll_interval * 1000)
+                elapsed += poll_interval
+                if elapsed % 10 == 0:
+                    robot_logger.info(f"[{self.SUPPLIER_NAME}] Still waiting for content... ({elapsed}s)")
+
+        if not content_loaded:
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Content indicators not found after {max_wait}s, proceeding anyway")
+
+        # Extra settle time after content appears
+        await self.page.wait_for_timeout(2000)
+
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] TALEP processing complete, ready for SİPARİŞ")
 
     async def submit_order(self) -> str:
         """
@@ -752,9 +814,6 @@ class MannHummelRobot(BaseRobot):
             Portal sipariş numarası
         """
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Submitting order (SİPARİŞ)...")
-
-        # Wait for page to settle after TALEP
-        await self.page.wait_for_timeout(2000)
 
         # Log all visible buttons for debugging
         try:
@@ -840,35 +899,67 @@ class MannHummelRobot(BaseRobot):
 
             raise RobotError(message="Could not find SİPARİŞ button", step=RobotStep.ORDER_SUBMIT)
 
-        # Wait for loading
+        # Wait for SİPARİŞ to be processed - similar to TALEP, this triggers server processing
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Waiting for SİPARİŞ to process...")
+
+        # Wait for network to settle
         try:
-            await self.page.wait_for_selector(self.SELECTORS["loading"], state="visible", timeout=2000)
-            await self.page.wait_for_selector(self.SELECTORS["loading"], state="hidden", timeout=60000)
+            await self.page.wait_for_load_state("networkidle", timeout=120000)
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Network is idle after SİPARİŞ")
         except PlaywrightTimeout:
-            pass
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Network idle timeout after 120s after SİPARİŞ")
 
-        # Wait for order number
-        await self.page.wait_for_timeout(5000)
+        # Wait additional time for page to render result
+        await self.page.wait_for_timeout(3000)
 
-        # Try to extract order number from multiple possible locations
-        order_number_selectors = [
-            "[class*='order-number']",
-            "[class*='order-no']",
-            "[class*='siparis-no']",
-            "text=/Sipariş No[:\\s]*\\d+/",
-            "text=/Order[:\\s]*\\d+/",
-        ]
-        for selector in order_number_selectors:
-            try:
-                order_element = await self.page.query_selector(selector)
-                if order_element:
-                    self.portal_order_no = await order_element.text_content()
-                    self.portal_order_no = self.portal_order_no.strip() if self.portal_order_no else None
-                    if self.portal_order_no:
-                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Found order number with selector {selector}: {self.portal_order_no}")
+        # Take screenshot to see what the portal shows after SİPARİŞ
+        try:
+            screenshot_path = await self.take_screenshot("after_siparis")
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Screenshot after SİPARİŞ: {screenshot_path}")
+        except Exception as e:
+            robot_logger.debug(f"[{self.SUPPLIER_NAME}] Could not take screenshot: {e}")
+
+        # Log page content for debugging - get body text
+        try:
+            body_text = await self.page.evaluate("() => document.body.innerText")
+            # Log first 2000 chars to see what's on the page
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Page content after SİPARİŞ (first 2000 chars): {body_text[:2000]}")
+        except Exception as e:
+            robot_logger.debug(f"[{self.SUPPLIER_NAME}] Could not get page text: {e}")
+
+        # Extract order reference from the page
+        # After SİPARİŞ, page shows "Tedarikçi sipariş referansı" with the order reference
+        # Also shows "Müşteri numarası" and "Toplam tahmini fiyat"
+        import re
+        try:
+            body_text = await self.page.evaluate("() => document.body.innerText")
+
+            # Look for "Tedarikçi sipariş referansı" - this is the main order reference
+            patterns = [
+                r'[Tt]edarik[çc]i\s+sipari[şs]\s+referans[ıi]\s*[\n:]*\s*(\S+)',
+                r'[Ss]ipari[şs]\s*[Rr]eferans[ıi]\s*[\n:]*\s*(\S+)',
+                r'[Ss]ipari[şs]\s*[Nn]o[:\s]*(\d+)',
+                r'[Oo]rder\s*[Rr]ef[:\s]*(\S+)',
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, body_text)
+                if match:
+                    ref = match.group(1).strip()
+                    # Validate: should be a number or alphanumeric code, not a form label
+                    if ref and len(ref) < 50 and not any(kw in ref.lower() for kw in ['tedarik', 'iletişim', 'müşteri']):
+                        self.portal_order_no = ref
+                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Found order reference via regex: {self.portal_order_no}")
                         break
-            except Exception as e:
-                robot_logger.debug(f"[{self.SUPPLIER_NAME}] Order number selector {selector} failed: {e}")
+
+            # Also check if "Talebi yanıtlayan" text exists (confirms TALEP was processed)
+            if "Talebi yanıtlayan" in body_text:
+                robot_logger.info(f"[{self.SUPPLIER_NAME}] Confirmed: 'Talebi yanıtlayan' found - TALEP was processed by supplier")
+            else:
+                robot_logger.warning(f"[{self.SUPPLIER_NAME}] 'Talebi yanıtlayan' NOT found - TALEP may not have been processed")
+
+        except Exception as e:
+            robot_logger.debug(f"[{self.SUPPLIER_NAME}] Order reference extraction failed: {e}")
 
         # Check for errors with multiple selectors
         error_selectors = [".error-message", ".alert-danger", "[class*='error']"]
@@ -955,18 +1046,15 @@ class MannHummelRobot(BaseRobot):
             )
 
             # Step 5: Select customer (REQUIRED - Sapma gösteren sevk yeri)
-            # Get customer code from customer relationship or use default mapping
-            # TRM56018 = DALAY PETROL (Batman) - default for Mann & Hummel
-            customer_code = "TRM56018"  # Default to DALAY PETROL
-            if self.order.customer:
-                # Try to get the supplier-specific customer code from mapping
-                # For now, use customer.code as fallback
-                customer_code = getattr(self.order.customer, 'code', customer_code) or customer_code
-            robot_logger.info(f"[{self.SUPPLIER_NAME}] Using customer code: {customer_code}")
+            # Get customer name from Excel parsing to match in TecCom dropdown
+            # Dropdown shows customer names like "HNR OTOM. PETROL İNŞ. NAKL. TUR SAN, 21070, Diyarbakır"
+            customer_name = getattr(self.order, '_excel_customer_name', '') or ''
+            customer_code = getattr(self.order, '_excel_customer_code', '') or ''
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer from Excel - name: {customer_name}, code: {customer_code}")
 
             await self.execute_step(
                 RobotStep.CUSTOMER_SELECT,
-                lambda: self.select_customer(customer_code),
+                lambda: self.select_customer(customer_name),
                 "Select customer",
                 max_attempts=settings.retry.navigation_max_attempts,
                 wait_seconds=settings.retry.navigation_wait_seconds

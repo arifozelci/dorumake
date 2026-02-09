@@ -749,25 +749,43 @@ async def process_order(
         # Update status to processing
         sqlserver_db.update_order_status(order_id, "PROCESSING")
 
-        # Prepare order info for worker
+        # Parse order items from Excel attachment
         order_items = []
-        if order["supplier_type"] == "mutlu_aku":
-            order_items = [
-                {"product_code": "AF-CST-AUEFB-04-0630600-L52B13-01-0", "product_name": "Castrol 12/63 EFB", "quantity": 72},
-                {"product_code": "AF-CST-AUEFB-04-0720720-L53B13-01-0", "product_name": "Castrol 12/72 EFB", "quantity": 66},
-            ]
-        else:  # mann_hummel
-            order_items = [
-                {"product_code": "AP 139/2", "product_name": "Hava Filtresi", "quantity": 50},
-                {"product_code": "HU 7010 Z", "product_name": "Yag Filtresi", "quantity": 30},
-            ]
+        parsed_order = None
+        attachment_path = order.get("attachment_path")
+        if attachment_path:
+            try:
+                from src.parser.excel_parser import ExcelParser
+                parser = ExcelParser()
+                parsed_order = parser.parse_file(attachment_path)
+                if parsed_order and parsed_order.items:
+                    order_items = [item.to_dict() for item in parsed_order.items]
+                    print(f"Parsed {len(order_items)} items from Excel: {attachment_path}")
+                else:
+                    print(f"WARNING: No items parsed from Excel: {attachment_path}")
+            except Exception as e:
+                print(f"ERROR: Failed to parse Excel attachment: {e}")
+
+        if not order_items:
+            raise HTTPException(
+                status_code=400,
+                detail="No order items found. Check Excel attachment."
+            )
+
+        # Extract customer info from parsed Excel if available
+        excel_customer_code = order.get("customer_code", "")
+        excel_customer_name = order.get("customer_name", "")
+        if parsed_order:
+            excel_customer_code = parsed_order.customer_code or excel_customer_code
+            excel_customer_name = parsed_order.customer_name or excel_customer_name
 
         order_info = {
             "id": order["id"],
             "order_code": order["order_code"],
             "supplier_type": "MUTLU" if order["supplier_type"] == "mutlu_aku" else "MANN",
             "caspar_order_no": order.get("order_code"),
-            "customer_code": order.get("customer_name", ""),
+            "customer_code": excel_customer_code,
+            "customer_name": excel_customer_name,
             "items": order_items,
         }
 

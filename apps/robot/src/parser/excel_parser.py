@@ -235,14 +235,19 @@ class ExcelParser:
                 if 'code' in cell_lower or 'kod' in cell_lower:
                     if 'order' in cell_lower or 'sipariş' in cell_lower:
                         metadata['order_code'] = next_value or cell_value
-                    elif 'customer' in cell_lower or 'müşteri' in cell_lower:
-                        metadata['customer_code'] = next_value or cell_value
                     elif 'ship' in cell_lower or 'sevk' in cell_lower:
                         metadata['ship_to_code'] = next_value or cell_value
+                    elif 'customer' in cell_lower or 'müşteri' in cell_lower:
+                        metadata['customer_code'] = next_value or cell_value
+                    elif cell_lower.strip().rstrip(':').strip() == 'code' and next_value:
+                        # Plain "Code :" without prefix → customer/company code
+                        if 'customer_code' not in metadata:
+                            metadata['customer_code'] = next_value
 
                 elif 'name' in cell_lower or 'adı' in cell_lower or 'isim' in cell_lower:
-                    if 'company' in cell_lower or 'şirket' in cell_lower or 'firma' in cell_lower:
-                        metadata['customer_name'] = next_value or cell_value
+                    # "Name :" or "Company Name :" or "Firma Adı :" - all map to customer_name
+                    if next_value and 'customer_name' not in metadata:
+                        metadata['customer_name'] = next_value
 
                 elif 'date' in cell_lower or 'tarih' in cell_lower:
                     if 'order' in cell_lower or 'sipariş' in cell_lower:

@@ -217,6 +217,9 @@ class OrderWorker:
             supplier_id='',  # Would be set from DB
             customer_id='',  # Would be set from DB
         )
+        # Pass customer info from Excel parsing (not from DB relationships)
+        order._excel_customer_code = order_info.get('customer_code', '')
+        order._excel_customer_name = order_info.get('customer_name', '')
         return order
 
     def _create_order_items(self, items_data: List[Dict]) -> List[OrderItem]:
