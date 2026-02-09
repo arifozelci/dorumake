@@ -1,6 +1,7 @@
 """
 DoruMake Email Worker
 Background worker for polling and processing order emails
+Automatically triggers robot processing after order creation
 """
 
 import asyncio
@@ -15,6 +16,10 @@ from src.email.parser import EmailParser, SupplierType
 from src.parser.excel_parser import ExcelParser
 from src.db.models import Email, EmailAttachment, Order, OrderItem, OrderStatus, EmailStatus
 from src.db.sqlserver import db
+from src.robots.mann_hummel import MannHummelRobot
+from src.robots.mutlu_aku import MutluAkuRobot
+from src.robots.base import RobotResult
+from src.notifications.email_sender import EmailSender
 
 
 class EmailWorker:
@@ -207,6 +212,13 @@ class EmailWorker:
                 f"Email processed successfully. "
                 f"Created {len(orders_created)} orders."
             )
+
+            # Auto-process orders with robots
+            for order_info in orders_created:
+                try:
+                    await self._auto_process_order(order_info)
+                except Exception as e:
+                    email_logger.error(f"Auto-process failed for {order_info['order_code']}: {e}")
         else:
             # Update email status to failed
             if db_email_id:
@@ -293,6 +305,170 @@ class EmailWorker:
         except Exception as e:
             email_logger.error(f"Error creating order: {e}")
             return None
+
+    def _notify_order_created(self, order_info: Dict[str, Any]):
+        """Send notification email when a new order is created"""
+        try:
+            sender = EmailSender()
+            order_code = order_info['order_code']
+            supplier = order_info['supplier_type']
+            customer = order_info.get('customer_name', 'Bilinmiyor')
+            item_count = order_info.get('item_count', 0)
+
+            supplier_name = "Mann & Hummel" if supplier == "MANN" else "Mutlu Akü" if supplier == "MUTLU" else supplier
+
+            subject = f"Yeni Sipariş: {order_code} - {supplier_name}"
+            body = (
+                f"Yeni sipariş oluşturuldu:\n\n"
+                f"Sipariş Kodu: {order_code}\n"
+                f"Tedarikçi: {supplier_name}\n"
+                f"Müşteri: {customer}\n"
+                f"Ürün Sayısı: {item_count}\n"
+                f"Durum: Robot ile işleniyor...\n\n"
+                f"Admin Panel: https://93-94-251-138.sslip.io/orders\n"
+            )
+
+            for recipient in settings.notification.recipients:
+                sender.send_email(recipient, subject, body)
+
+            email_logger.info(f"Order notification sent for {order_code}")
+        except Exception as e:
+            email_logger.error(f"Failed to send order notification: {e}")
+
+    def _notify_order_completed(self, order_info: Dict[str, Any], result: RobotResult):
+        """Send notification email when order processing completes"""
+        try:
+            sender = EmailSender()
+            order_code = order_info['order_code']
+            supplier = order_info['supplier_type']
+            supplier_name = "Mann & Hummel" if supplier == "MANN" else "Mutlu Akü" if supplier == "MUTLU" else supplier
+
+            if result.success:
+                subject = f"Sipariş Tamamlandı: {order_code} - {supplier_name}"
+                body = (
+                    f"Sipariş başarıyla işlendi:\n\n"
+                    f"Sipariş Kodu: {order_code}\n"
+                    f"Tedarikçi: {supplier_name}\n"
+                    f"Portal Sipariş No: {result.portal_order_no}\n"
+                    f"Süre: {result.duration_seconds:.0f} saniye\n\n"
+                    f"Admin Panel: https://93-94-251-138.sslip.io/orders\n"
+                )
+            else:
+                subject = f"Sipariş HATA: {order_code} - {supplier_name}"
+                body = (
+                    f"Sipariş işlenirken hata oluştu:\n\n"
+                    f"Sipariş Kodu: {order_code}\n"
+                    f"Tedarikçi: {supplier_name}\n"
+                    f"Hata: {result.message}\n\n"
+                    f"Admin Panel: https://93-94-251-138.sslip.io/orders\n"
+                )
+
+            for recipient in settings.notification.recipients:
+                sender.send_email(recipient, subject, body)
+
+            email_logger.info(f"Order completion notification sent for {order_code}")
+        except Exception as e:
+            email_logger.error(f"Failed to send completion notification: {e}")
+
+    async def _auto_process_order(self, order_info: Dict[str, Any]):
+        """
+        Automatically process order with the appropriate robot
+
+        Args:
+            order_info: Order info dict from _create_order_from_data
+        """
+        order_code = order_info['order_code']
+        supplier_type = order_info['supplier_type']
+        db_id = order_info.get('db_id')
+
+        email_logger.info(f"Auto-processing order {order_code} with {supplier_type} robot...")
+
+        # Notify: order created and being processed
+        self._notify_order_created(order_info)
+
+        try:
+            # Update status to processing
+            if db_id:
+                db.update_order_status(db_id, 'PROCESSING')
+
+            # Parse items from Excel attachment
+            items = order_info.get('items', [])
+            if not items:
+                attachment_path = order_info.get('attachment_path')
+                if attachment_path:
+                    parsed = self.excel_parser.parse_file(attachment_path)
+                    if parsed and parsed.items:
+                        items = [item.to_dict() for item in parsed.items]
+
+            if not items:
+                raise Exception("No order items found")
+
+            # Create Order mock object
+            order = Order(
+                id=db_id or '',
+                order_code=order_code,
+                caspar_order_no=order_code,
+                status=OrderStatus.PENDING,
+                supplier_id='',
+                customer_id='',
+            )
+            order._excel_customer_code = order_info.get('customer_code', '')
+            order._excel_customer_name = order_info.get('customer_name', '')
+
+            # Create OrderItem objects
+            order_items = []
+            for item_data in items:
+                item = OrderItem(
+                    id='',
+                    order_id='',
+                    product_code=item_data.get('product_code', ''),
+                    product_name=item_data.get('product_name'),
+                    quantity=item_data.get('quantity', 0),
+                )
+                order_items.append(item)
+
+            # Select and run robot
+            if supplier_type == "MANN":
+                robot = MannHummelRobot(order, order_items)
+            elif supplier_type == "MUTLU":
+                robot = MutluAkuRobot(order, order_items)
+            else:
+                raise Exception(f"Unknown supplier: {supplier_type}")
+
+            result = await robot.run()
+
+            # Update order status and notify
+            if result.success:
+                if db_id:
+                    db.update_order_status(
+                        db_id, 'COMPLETED',
+                        portal_order_number=result.portal_order_no
+                    )
+                email_logger.info(
+                    f"Order {order_code} completed! Portal order: {result.portal_order_no}"
+                )
+            else:
+                if db_id:
+                    db.update_order_status(
+                        db_id, 'FAILED',
+                        error_message=result.message
+                    )
+                email_logger.error(f"Order {order_code} failed: {result.message}")
+
+            # Notify: order completed or failed
+            self._notify_order_completed(order_info, result)
+
+        except Exception as e:
+            email_logger.error(f"Auto-process error for {order_code}: {e}")
+            if db_id:
+                try:
+                    db.update_order_status(db_id, 'FAILED', error_message=str(e))
+                except Exception:
+                    pass
+            # Notify: error
+            error_result = RobotResult(success=False, order_id=order_code)
+            error_result.message = str(e)
+            self._notify_order_completed(order_info, error_result)
 
     async def process_single_email(self, email_data: Dict[str, Any]) -> Dict[str, Any]:
         """

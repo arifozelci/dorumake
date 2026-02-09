@@ -10,12 +10,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class DatabaseSettings(BaseSettings):
     """Database connection settings (SQL Server)"""
-    model_config = SettingsConfigDict(env_prefix="DB_")
+    model_config = SettingsConfigDict(
+        env_prefix="DB_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     host: str = "localhost"
     port: int = 1433
     user: str = "sa"
-    password: str = "KolayAlacak2025"
+    password: str = ""  # Set via DB_PASSWORD env var
     name: str = "DoruMake"
     driver: str = "ODBC Driver 18 for SQL Server"
 
@@ -49,11 +54,16 @@ class EmailSettings(BaseSettings):
 
 class MutluAkuSettings(BaseSettings):
     """Mutlu Akü portal settings"""
-    model_config = SettingsConfigDict(env_prefix="MUTLU_")
+    model_config = SettingsConfigDict(
+        env_prefix="MUTLU_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     portal_url: str = "https://mutlu.visionnext.com.tr/Prm/UserAccount/Login"
-    username: str = "burak.bakar@castrol.com"
-    password: str = "123456"
+    username: str = ""  # Set via MUTLU_USERNAME env var
+    password: str = ""  # Set via MUTLU_PASSWORD env var
     default_depo: str = "A. Merkez Depo"
     default_personel: str = "CASTROL DALAY"
     default_odeme_vadesi: str = "60 Gün"
@@ -63,11 +73,16 @@ class MutluAkuSettings(BaseSettings):
 
 class MannHummelSettings(BaseSettings):
     """Mann & Hummel (TecCom) portal settings"""
-    model_config = SettingsConfigDict(env_prefix="MANN_")
+    model_config = SettingsConfigDict(
+        env_prefix="MANN_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     portal_url: str = "https://teccom.tecalliance.net/newapp/auth/welcome"
-    username: str = "dilsad.kaptan@dorufinansal.com"
-    password: str = "Dilsad.2201"
+    username: str = ""  # Set via MANN_USERNAME env var
+    password: str = ""  # Set via MANN_PASSWORD env var
     default_tedarikci: str = "FILTRON-MANN+HUMMEL Türkiye"
 
 
@@ -104,7 +119,8 @@ class NotificationSettings(BaseSettings):
     smtp_password: str = ""
     recipients: List[str] = [
         "arif.ozelci@dorufinansal.com",
-        "dilsad.kaptan@dorufinansal.com"
+        "dilsad.kaptan@dorufinansal.com",
+        "asim.koc@dorufinansal.com"
     ]
     throttle_minutes: int = 60  # Same error notification throttle
 
@@ -151,8 +167,11 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
-    # JWT Auth
-    jwt_secret_key: str = "DoruMake-JWT-Secret-Key-2025-Change-In-Production"
+    # JWT Auth - MUST be set via JWT_SECRET_KEY environment variable in production
+    jwt_secret_key: str = Field(
+        default="CHANGE-ME-IN-PRODUCTION-USE-RANDOM-64-CHAR-SECRET",
+        description="JWT secret key - must be changed in production via JWT_SECRET_KEY env var"
+    )
 
     # Sub-settings
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
