@@ -725,14 +725,11 @@ class MannHummelRobot(BaseRobot):
         """
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Submitting request (TALEP)...")
 
-        # Click TALEP button - try multiple selectors
+        # Click TALEP button - use data-test-id (most reliable), fallback to text
         talep_selectors = [
+            "[data-test-id='requestButton']",
             "button:has-text('TALEP')",
             "button:has-text('Talep')",
-            "text=TALEP",
-            "text=Talep",
-            "button >> text=TALEP",
-            "[class*='button']:has-text('TALEP')",
         ]
 
         clicked = False
@@ -810,62 +807,33 @@ class MannHummelRobot(BaseRobot):
         """
         SİPARİŞ butonu - Sipariş onaylama
 
+        After TALEP, the page shows request reference (e.g. "1").
+        Clicking SİPARİŞ converts the request to an actual order
+        and generates a real order number starting with "110...".
+
         Returns:
-            Portal sipariş numarası
+            Portal sipariş numarası (110xxx format)
         """
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Submitting order (SİPARİŞ)...")
 
-        # Log all visible buttons for debugging
+        # Take screenshot before SİPARİŞ to see TALEP result
         try:
-            buttons = await self.page.query_selector_all("button")
-            button_texts = []
-            for btn in buttons:
-                text = await btn.text_content()
-                if text:
-                    button_texts.append(text.strip())
-            robot_logger.info(f"[{self.SUPPLIER_NAME}] Visible buttons on page: {button_texts[:20]}")
-        except Exception as e:
-            robot_logger.debug(f"[{self.SUPPLIER_NAME}] Could not enumerate buttons: {e}")
+            await self.take_screenshot("before_siparis")
+        except Exception:
+            pass
 
-        # Click SİPARİŞ button - try multiple selectors with different variations
-        # PDF'e göre: TALEP yanında, sağ üst köşede, Alışveriş sepeti yöneticisi solunda
+        # Click SİPARİŞ button - use data-test-id (most reliable), fallback to text
         siparis_selectors = [
-            # Exact text matches (Turkish characters)
+            "[data-test-id='orderButton']",
             "button:has-text('SİPARİŞ')",
-            "button:has-text('SIPARIS')",  # Without Turkish İ
             "button:has-text('Sipariş')",
-            "button:has-text('Siparis')",  # Without Turkish ş
-            # Text-only selectors
-            "text=SİPARİŞ",
-            "text=SIPARIS",
-            "text=Sipariş",
-            # Near TALEP button (they're side by side per PDF)
-            "button:near(button:has-text('TALEP')):has-text('SİPARİŞ')",
-            "button:right-of(button:has-text('TALEP'))",
-            # Look for any button with partial match
-            "*:has-text('SİPARİŞ')",
-            "*:has-text('SIPARIS')",
-            # Div or span that might contain the text
-            "div:has-text('SİPARİŞ')",
-            "span:has-text('SİPARİŞ')",
-            # Case insensitive approach with regex
-            "button:text-matches('sipari', 'i')",
-            "button:text-matches('SIPARI', 'i')",
-            # Data attributes
-            "[data-test-id*='order']",
-            "[data-test-id*='siparis']",
-            "[data-test*='siparis']",
-            # Class-based
-            "[class*='order-button']",
-            "[class*='siparis']",
-            "button.btn-danger",  # Red button per PDF
-            "button.btn-warning",
+            "button:has-text('SIPARIS')",
         ]
 
         clicked = False
         for selector in siparis_selectors:
             try:
-                await self.page.wait_for_selector(selector, state="visible", timeout=2000)
+                await self.page.wait_for_selector(selector, state="visible", timeout=3000)
                 await self.page.click(selector)
                 robot_logger.info(f"[{self.SUPPLIER_NAME}] Clicked SİPARİŞ button with: {selector}")
                 clicked = True
@@ -875,32 +843,11 @@ class MannHummelRobot(BaseRobot):
                 continue
 
         if not clicked:
-            # Log page HTML for debugging
-            try:
-                # Find all elements with "sipari" text (case insensitive)
-                all_elements = await self.page.query_selector_all("*")
-                siparis_elements = []
-                for el in all_elements[:500]:  # Limit to first 500 elements
-                    try:
-                        text = await el.text_content()
-                        tag = await el.evaluate("el => el.tagName")
-                        if text and ("sipari" in text.lower() or "order" in text.lower()):
-                            class_name = await el.evaluate("el => el.className")
-                            siparis_elements.append(f"{tag}.{class_name}: {text[:50]}")
-                    except:
-                        continue
-                robot_logger.error(f"[{self.SUPPLIER_NAME}] Elements containing 'sipari/order': {siparis_elements[:10]}")
-
-                # Also log the page URL for context
-                current_url = self.page.url
-                robot_logger.error(f"[{self.SUPPLIER_NAME}] Current page URL: {current_url}")
-            except Exception as e:
-                robot_logger.debug(f"[{self.SUPPLIER_NAME}] Could not log page elements: {e}")
-
             raise RobotError(message="Could not find SİPARİŞ button", step=RobotStep.ORDER_SUBMIT)
 
-        # Wait for SİPARİŞ to be processed - similar to TALEP, this triggers server processing
-        robot_logger.info(f"[{self.SUPPLIER_NAME}] Waiting for SİPARİŞ to process...")
+        # Wait for SİPARİŞ to be processed - this converts TALEP to actual order
+        # The order number (110xxx) should appear on the page
+        robot_logger.info(f"[{self.SUPPLIER_NAME}] Waiting for SİPARİŞ to process and order number to appear...")
 
         # Wait for network to settle
         try:
@@ -909,59 +856,84 @@ class MannHummelRobot(BaseRobot):
         except PlaywrightTimeout:
             robot_logger.warning(f"[{self.SUPPLIER_NAME}] Network idle timeout after 120s after SİPARİŞ")
 
-        # Wait additional time for page to render result
-        await self.page.wait_for_timeout(3000)
+        # Poll for real order number to appear on the page
+        # After TALEP, "Tedarikçi sipariş referansı" shows "1" (just a request number)
+        # After SİPARİŞ, this field should change to a real order number (e.g. 110xxx, 600xxx, etc.)
+        # Key: the real order number is NOT "1" - it's a multi-digit number
+        import re
+        order_number = None
+        max_wait = 180  # seconds - can take minutes for large orders
+        poll_interval = 2  # seconds
+        elapsed = 0
 
-        # Take screenshot to see what the portal shows after SİPARİŞ
+        while elapsed < max_wait and not order_number:
+            try:
+                body_text = await self.page.evaluate("() => document.body.innerText")
+
+                # Look for "Tedarikçi sipariş referansı" with a real order number (not "1")
+                patterns = [
+                    r'[Tt]edarik[çc]i\s+sipari[şs]\s+referans[ıi]\s*[\n:]*\s*(\d{2,})',
+                    r'[Ss]ipari[şs]\s*[Rr]eferans[ıi]\s*[\n:]*\s*(\d{2,})',
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, body_text)
+                    if match:
+                        ref = match.group(1).strip()
+                        # Must be at least 2 digits (not just "1" which is TALEP reference)
+                        if ref and ref != "1":
+                            order_number = ref
+                            robot_logger.info(f"[{self.SUPPLIER_NAME}] Found order number: {order_number} (after {elapsed}s)")
+                            break
+            except Exception as e:
+                robot_logger.debug(f"[{self.SUPPLIER_NAME}] Error checking for order number: {e}")
+
+            if not order_number:
+                await self.page.wait_for_timeout(poll_interval * 1000)
+                elapsed += poll_interval
+                if elapsed % 10 == 0:
+                    robot_logger.info(f"[{self.SUPPLIER_NAME}] Still waiting for real order number (not '1')... ({elapsed}s)")
+
+        # Take screenshot after SİPARİŞ
         try:
             screenshot_path = await self.take_screenshot("after_siparis")
             robot_logger.info(f"[{self.SUPPLIER_NAME}] Screenshot after SİPARİŞ: {screenshot_path}")
         except Exception as e:
             robot_logger.debug(f"[{self.SUPPLIER_NAME}] Could not take screenshot: {e}")
 
-        # Log page content for debugging - get body text
+        # Log page content for debugging
         try:
             body_text = await self.page.evaluate("() => document.body.innerText")
-            # Log first 2000 chars to see what's on the page
             robot_logger.info(f"[{self.SUPPLIER_NAME}] Page content after SİPARİŞ (first 2000 chars): {body_text[:2000]}")
         except Exception as e:
             robot_logger.debug(f"[{self.SUPPLIER_NAME}] Could not get page text: {e}")
 
-        # Extract order reference from the page
-        # After SİPARİŞ, page shows "Tedarikçi sipariş referansı" with the order reference
-        # Also shows "Müşteri numarası" and "Toplam tahmini fiyat"
-        import re
-        try:
-            body_text = await self.page.evaluate("() => document.body.innerText")
+        if order_number:
+            self.portal_order_no = order_number
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Order submitted successfully. Portal order: {self.portal_order_no}")
+        else:
+            # Fallback: try to get any reference from the page that isn't "1"
+            try:
+                body_text = await self.page.evaluate("() => document.body.innerText")
+                fallback_patterns = [
+                    r'[Tt]edarik[çc]i\s+sipari[şs]\s+referans[ıi]\s*[\n:]*\s*(\S+)',
+                    r'[Ss]ipari[şs]\s*[Nn]o[:\s]*(\d+)',
+                ]
+                for pattern in fallback_patterns:
+                    match = re.search(pattern, body_text)
+                    if match:
+                        ref = match.group(1).strip()
+                        if ref and ref != "1" and len(ref) < 50:
+                            self.portal_order_no = ref
+                            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Fallback order reference: {ref}")
+                            break
+            except Exception:
+                pass
 
-            # Look for "Tedarikçi sipariş referansı" - this is the main order reference
-            patterns = [
-                r'[Tt]edarik[çc]i\s+sipari[şs]\s+referans[ıi]\s*[\n:]*\s*(\S+)',
-                r'[Ss]ipari[şs]\s*[Rr]eferans[ıi]\s*[\n:]*\s*(\S+)',
-                r'[Ss]ipari[şs]\s*[Nn]o[:\s]*(\d+)',
-                r'[Oo]rder\s*[Rr]ef[:\s]*(\S+)',
-            ]
+            if not self.portal_order_no:
+                robot_logger.error(f"[{self.SUPPLIER_NAME}] Could not find real order number after {max_wait}s - still showing TALEP reference")
 
-            for pattern in patterns:
-                match = re.search(pattern, body_text)
-                if match:
-                    ref = match.group(1).strip()
-                    # Validate: should be a number or alphanumeric code, not a form label
-                    if ref and len(ref) < 50 and not any(kw in ref.lower() for kw in ['tedarik', 'iletişim', 'müşteri']):
-                        self.portal_order_no = ref
-                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Found order reference via regex: {self.portal_order_no}")
-                        break
-
-            # Also check if "Talebi yanıtlayan" text exists (confirms TALEP was processed)
-            if "Talebi yanıtlayan" in body_text:
-                robot_logger.info(f"[{self.SUPPLIER_NAME}] Confirmed: 'Talebi yanıtlayan' found - TALEP was processed by supplier")
-            else:
-                robot_logger.warning(f"[{self.SUPPLIER_NAME}] 'Talebi yanıtlayan' NOT found - TALEP may not have been processed")
-
-        except Exception as e:
-            robot_logger.debug(f"[{self.SUPPLIER_NAME}] Order reference extraction failed: {e}")
-
-        # Check for errors with multiple selectors
+        # Check for errors
         error_selectors = [".error-message", ".alert-danger", "[class*='error']"]
         for selector in error_selectors:
             try:
@@ -1079,14 +1051,16 @@ class MannHummelRobot(BaseRobot):
                 take_screenshot_on_error=True
             )
 
-            # Success!
+            # Success! Take final screenshot as proof
+            success_screenshot = await self.take_screenshot("order_complete")
+
             result.success = True
             result.portal_order_no = portal_order_no
             result.message = f"Order successfully processed. Portal order: {portal_order_no}"
             result.steps_completed = self.steps_completed
             result.screenshot_paths = self.screenshot_paths
 
-            self.log_step(RobotStep.COMPLETE, "SUCCESS", result.message)
+            self.log_step(RobotStep.COMPLETE, "SUCCESS", result.message, screenshot_path=success_screenshot)
 
         except RobotError as e:
             result.success = False
