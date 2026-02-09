@@ -1,5 +1,5 @@
 """
-DoruMake Excel Parser
+KolayRobot Excel Parser
 Parses order Excel files from Castrol/suppliers
 """
 

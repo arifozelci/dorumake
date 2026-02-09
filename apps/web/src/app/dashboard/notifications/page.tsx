@@ -69,7 +69,7 @@ const sampleNotifications: Notification[] = [
     id: 6,
     type: 'info',
     title: 'Sistem başlatıldı',
-    message: 'DoruMake sistemi başarıyla başlatıldı. Tüm servisler aktif.',
+    message: 'KolayRobot sistemi başarıyla başlatıldı. Tüm servisler aktif.',
     timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
     read: true,
   },

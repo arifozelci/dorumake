@@ -1,5 +1,5 @@
 """
-DoruMake Notifications Module
+KolayRobot Notifications Module
 Email and notification services
 """
 

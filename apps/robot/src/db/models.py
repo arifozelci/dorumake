@@ -1,5 +1,5 @@
 """
-DoruMake Database Models
+KolayRobot Database Models
 SQLAlchemy ORM models matching Prisma schema
 """
 

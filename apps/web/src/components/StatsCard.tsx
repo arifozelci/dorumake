@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
+import Link from 'next/link';
 
 interface StatsCardProps {
   title: string;
@@ -13,6 +14,7 @@ interface StatsCardProps {
   };
   color?: 'primary' | 'success' | 'warning' | 'danger';
   loading?: boolean;
+  href?: string;
 }
 
 const colorConfig = {
@@ -46,17 +48,11 @@ const colorConfig = {
   },
 };
 
-export function StatsCard({ title, value, icon: Icon, trend, color = 'primary', loading = false }: StatsCardProps) {
+export function StatsCard({ title, value, icon: Icon, trend, color = 'primary', loading = false, href }: StatsCardProps) {
   const config = colorConfig[color];
 
-  return (
-    <div className={cn(
-      'relative overflow-hidden rounded-2xl border bg-white p-6',
-      'transition-all duration-300 ease-out',
-      'hover:shadow-lg hover:scale-[1.02]',
-      'group',
-      config.border
-    )}>
+  const cardContent = (
+    <>
       {/* Background gradient */}
       <div className={cn(
         'absolute inset-0 bg-gradient-to-br opacity-50',
@@ -105,6 +101,29 @@ export function StatsCard({ title, value, icon: Icon, trend, color = 'primary', 
         'absolute -bottom-4 -right-4 w-24 h-24 rounded-full opacity-10',
         config.bg
       )} />
+    </>
+  );
+
+  const cardClassName = cn(
+    'relative overflow-hidden rounded-2xl border bg-white p-6',
+    'transition-all duration-300 ease-out',
+    'hover:shadow-lg hover:scale-[1.02]',
+    'group',
+    config.border,
+    href && 'cursor-pointer'
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={cn(cardClassName, 'block')}>
+        {cardContent}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={cardClassName}>
+      {cardContent}
     </div>
   );
 }
@@ -115,16 +134,13 @@ export function MiniStatsCard({
   value,
   icon: Icon,
   color = 'primary',
-  loading = false
+  loading = false,
+  href
 }: Omit<StatsCardProps, 'trend'>) {
   const config = colorConfig[color];
 
-  return (
-    <div className={cn(
-      'flex items-center gap-4 p-4 rounded-xl border bg-white',
-      'transition-all duration-200 hover:shadow-md',
-      config.border
-    )}>
+  const cardContent = (
+    <>
       <div className={cn('p-2.5 rounded-lg', config.iconBg)}>
         <Icon className={cn('w-5 h-5', config.icon)} />
       </div>
@@ -136,6 +152,27 @@ export function MiniStatsCard({
           <p className="text-xl font-bold text-gray-900">{value}</p>
         )}
       </div>
+    </>
+  );
+
+  const cardClassName = cn(
+    'flex items-center gap-4 p-4 rounded-xl border bg-white',
+    'transition-all duration-200 hover:shadow-md',
+    config.border,
+    href && 'cursor-pointer'
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={cardClassName}>
+        {cardContent}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={cardClassName}>
+      {cardContent}
     </div>
   );
 }

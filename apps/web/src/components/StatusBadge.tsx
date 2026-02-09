@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Clock, Loader2, CheckCircle, XCircle, ListOrdered } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 
-type Status = 'pending' | 'processing' | 'completed' | 'failed' | 'queued';
+type Status = 'pending' | 'processing' | 'completed' | 'failed' | 'queued' | 'cancelled' | 'processed' | 'ignored';
 
 interface StatusBadgeProps {
   status: string;
@@ -38,6 +38,21 @@ const statusConfig: Record<Status, { label: string; className: string; icon: Luc
     label: 'Sırada',
     className: 'bg-gray-100 text-gray-700 border-gray-200',
     icon: ListOrdered,
+  },
+  cancelled: {
+    label: 'İptal Edildi',
+    className: 'bg-gray-100 text-gray-700 border-gray-200',
+    icon: XCircle,
+  },
+  processed: {
+    label: 'İşlendi',
+    className: 'bg-success-100 text-success-700 border-success-200',
+    icon: CheckCircle,
+  },
+  ignored: {
+    label: 'Göz Ardı Edildi',
+    className: 'bg-gray-100 text-gray-500 border-gray-200',
+    icon: Clock,
   },
 };
 

@@ -1,5 +1,5 @@
 """
-DoruMake Logging Configuration
+KolayRobot Logging Configuration
 Centralized logging with Loguru
 """
 

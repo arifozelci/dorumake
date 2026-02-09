@@ -1,5 +1,5 @@
 """
-DoruMake Order Worker
+KolayRobot Order Worker
 Background worker for processing orders with supplier robots
 """
 

@@ -1,20 +1,55 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
+# ==============================================
+# DoruMake .gitignore
+# ==============================================
 
-# Build outputs
-.next/
-out/
-dist/
-build/
+# ==============================================
+# SENSITIVE FILES - NEVER COMMIT
+# ==============================================
 
-# Environment files
+# Environment files with secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
+*.env
+
+# Documentation with credentials (CRITICAL!)
+CLAUDE.md
+CREDENTIALS.md
+SECRETS.md
+*credentials*
+*secrets*
+
+# SSH keys and certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+id_rsa*
+id_dsa*
+id_ed25519*
+
+# API keys and tokens
+*api_key*
+*apikey*
+*token*
+*.token
+
+# ==============================================
+# DEPENDENCIES
+# ==============================================
+
+# Node.js
+node_modules/
+.pnp
+.pnp.js
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Python
 __pycache__/
@@ -25,34 +60,240 @@ venv/
 .venv/
 env/
 .env/
+ENV/
+*.egg
 *.egg-info/
+dist/
+build/
+eggs/
+parts/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
 
-# IDE
-.idea/
+# ==============================================
+# BUILD OUTPUTS
+# ==============================================
+
+# Next.js
+.next/
+out/
+.nuxt/
+
+# General build
+dist/
+build/
+*.min.js
+*.min.css
+
+# ==============================================
+# IDE & EDITOR
+# ==============================================
+
+# VSCode
 .vscode/
+*.code-workspace
+
+# JetBrains (PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim/Neovim
 *.swp
 *.swo
+*.swn
+*~
+.vim/
 
-# OS
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# ==============================================
+# OS FILES
+# ==============================================
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
-# Logs (only at root level, not in app directories)
-/logs/
-apps/robot/logs/
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ==============================================
+# LOGS & TEMP FILES
+# ==============================================
+
+# Log files
 *.log
+logs/
+*.log.*
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
 
-# Turbo
-.turbo/
-
-# Prisma
-packages/database/prisma/*.db
-
-# Screenshots & Downloads (robot)
-apps/robot/screenshots/
-apps/robot/downloads/
+# Robot specific logs
+apps/robot/logs/
 
 # Temporary files
 tmp/
 temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Cache
+.cache/
+*.cache
+.eslintcache
+.stylelintcache
+
+# ==============================================
+# TESTING
+# ==============================================
+
+# Coverage
+coverage/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Test files
+*.test.js.snap
+
+# ==============================================
+# ROBOT SPECIFIC
+# ==============================================
+
+# Screenshots (may contain sensitive portal data)
+apps/robot/screenshots/
+screenshots/
+
+# Downloads (order files)
+apps/robot/downloads/
+downloads/
+
+# CSV files (order data)
+*.csv
+
+# Excel files (order data)
+*.xlsx
+*.xls
+
+# ==============================================
+# DATABASE
+# ==============================================
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Prisma
+packages/database/prisma/*.db
+prisma/*.db
+
+# SQL dumps (may contain data)
+*.sql
+*.dump
+
+# ==============================================
+# TURBO & MONOREPO
+# ==============================================
+
+.turbo/
+.vercel/
+
+# ==============================================
+# MISCELLANEOUS
+# ==============================================
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# mkdocs
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# Docker
+*.dockerignore
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Ansible
+*.retry
+
+# Local test files
+test_*.py
+demo_*.py
+*_test.py

@@ -1,6 +1,6 @@
-# DoruMake Robot Service
+# KolayRobot Robot Service
 """
-DoruMake - Sipariş Otomasyon Sistemi
+KolayRobot - Sipariş Otomasyon Sistemi
 Enterprise-grade RPA for order processing
 """
 

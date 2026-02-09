@@ -125,7 +125,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Veritabanı Adı</span>
-                <span className="text-sm text-gray-900">dorumake</span>
+                <span className="text-sm text-gray-900">kolayrobot</span>
               </div>
             </div>
           </div>

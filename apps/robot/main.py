@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DoruMake Robot Service
+KolayRobot Robot Service
 Main entry point for the order automation system
 
 Starts:
@@ -64,7 +64,7 @@ async def main():
     setup_logging()
 
     logger.info("=" * 60)
-    logger.info(f"  DoruMake Robot Service v{settings.app_version}")
+    logger.info(f"  KolayRobot Robot Service v{settings.app_version}")
     logger.info(f"  Environment: {settings.environment}")
     logger.info(f"  Debug: {settings.debug}")
     logger.info("=" * 60)

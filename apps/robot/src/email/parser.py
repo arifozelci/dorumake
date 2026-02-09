@@ -1,5 +1,5 @@
 """
-DoruMake Email Parser
+KolayRobot Email Parser
 Parses email content to extract supplier and order information
 """
 
@@ -64,6 +64,7 @@ class EmailParser:
         SupplierType.MANN_HUMMEL: [
             r'mann',
             r'hummel',
+            r'mummel',  # Typo in some source data
             r'filtron',
         ],
         SupplierType.MUTLU_AKU: [
@@ -316,7 +317,15 @@ class EmailParser:
             confidence = 0.0
             for att in attachments:
                 if att.get('filename', '').lower().endswith(('.xlsx', '.xls')):
+                    # Try to get raw data first, if not available read from file_path
                     excel_data = att.get('data')
+                    if not excel_data and att.get('file_path'):
+                        try:
+                            with open(att['file_path'], 'rb') as f:
+                                excel_data = f.read()
+                        except Exception as e:
+                            email_logger.error(f"Failed to read Excel file: {e}")
+                            continue
                     if excel_data:
                         supplier, confidence = self.detect_supplier_from_excel(excel_data)
                         if supplier != SupplierType.UNKNOWN:

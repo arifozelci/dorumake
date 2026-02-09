@@ -1,5 +1,5 @@
 """
-DoruMake Database Initialization
+KolayRobot Database Initialization
 Creates tables and seeds initial data
 """
 
@@ -95,7 +95,7 @@ async def seed_users(session: AsyncSession):
     users = [
         {
             "username": "admin",
-            "email": "admin@dorumake.com",
+            "email": "admin@kolayrobot.com",
             "full_name": "Sistem Yöneticisi",
             "hashed_password": hash_password("admin123"),
             "role": "admin",
@@ -209,7 +209,7 @@ async def init_database():
 def main():
     """Entry point for database initialization"""
     print("\n" + "=" * 50)
-    print("DoruMake Database Initialization")
+    print("KolayRobot Database Initialization")
     print("=" * 50 + "\n")
 
     asyncio.run(init_database())

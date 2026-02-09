@@ -41,7 +41,7 @@
     "logout": "Logout"
   },
   "sidebar": {
-    "orderAutomation": "Order Automation",
+    "orderAutomation": "RPA Management",
     "systemActive": "System Active",
     "allServicesRunning": "All services running"
   },
@@ -55,9 +55,9 @@
     "loggingIn": "Signing in...",
     "loginError": "Login Error",
     "loginFailed": "Login failed",
-    "orderAutomationSystem": "Order Automation System",
-    "manageOrdersAutomatically": "Manage Your Orders Automatically",
-    "systemDescription": "Powerful RPA system for automatic order entry to supplier portals. Mann & Hummel and Mutlu Aku integrations.",
+    "orderAutomationSystem": "RPA Management Panel",
+    "manageOrdersAutomatically": "Automate Your Business Processes",
+    "systemDescription": "Intelligent RPA platform that automates your business processes. Fast, reliable, uninterrupted.",
     "nonstopOperation": "24/7 Operation",
     "successRate": "Success Rate",
     "supplier": "Supplier"
@@ -75,9 +75,9 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "subtitle": "Overview of order automation system",
+    "subtitle": "Overview of automation system",
     "welcome": "Welcome!",
-    "welcomeMessage": "Your order automation system is active and running. You can track your daily operations here.",
+    "welcomeMessage": "Your automation system is active and running. You can track your daily operations here.",
     "systemStatus": "System Status",
     "allServicesActive": "All services active",
     "someServicesDown": "Some services are down",

@@ -6,8 +6,8 @@ import { Providers } from './providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'DoruMake - Sipariş Otomasyon Sistemi',
-  description: 'Castrol bayileri için sipariş otomasyon yönetim paneli',
+  title: 'KolayRobot - RPA Yönetim Paneli',
+  description: 'İşletmenize özel robotik süreç otomasyonu yönetim paneli',
 };
 
 export default function RootLayout({

@@ -2,8 +2,8 @@
  * Auth utilities for DoruMake Admin Panel
  */
 
-const TOKEN_KEY = 'dorumake_token';
-const TOKEN_EXPIRY_KEY = 'dorumake_token_expiry';
+const TOKEN_KEY = 'kolayrobot_token';
+const TOKEN_EXPIRY_KEY = 'kolayrobot_token_expiry';
 
 export interface LoginCredentials {
   username: string;

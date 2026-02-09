@@ -1,5 +1,5 @@
 """
-DoruMake Email Sender
+KolayRobot Email Sender
 SMTP-based email notification service
 """
 

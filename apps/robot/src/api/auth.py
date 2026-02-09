@@ -1,11 +1,16 @@
 """
-JWT Authentication module for DoruMake API
+JWT Authentication module for KolayRobot API
 """
 
 from datetime import datetime, timedelta
 from typing import Optional
 import hashlib
 import secrets
+import os
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -14,10 +19,16 @@ from pydantic import BaseModel
 
 from src.config import settings
 
-# JWT Settings
+# JWT Settings - Generate random secret if not configured
 SECRET_KEY = settings.jwt_secret_key
+if SECRET_KEY == "CHANGE-ME-IN-PRODUCTION-USE-RANDOM-64-CHAR-SECRET":
+    # Development fallback - in production this MUST be set via environment variable
+    import warnings
+    warnings.warn("JWT_SECRET_KEY not set! Using development fallback. Set JWT_SECRET_KEY in production!", UserWarning)
+    SECRET_KEY = secrets.token_hex(32)
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours (reduced from 24 for security)
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -43,17 +54,50 @@ class UserInDB(User):
     hashed_password: str
 
 
-# Simple SHA256 hash for password (sufficient for internal admin panel)
-# In production, use proper bcrypt but for now avoiding passlib issues
-def hash_password(password: str) -> str:
-    """Hash password with SHA256 and salt"""
-    salt = "dorumake-salt-2025"
-    return hashlib.sha256(f"{salt}{password}".encode('utf-8')).hexdigest()
+# Password hashing using PBKDF2-SHA256 (more secure than simple SHA256)
+# Use random per-password salt stored with hash
+PASSWORD_SALT_LENGTH = 16
+PASSWORD_ITERATIONS = 100000  # OWASP recommended minimum
+
+def hash_password(password: str, salt: bytes = None) -> str:
+    """
+    Hash password with PBKDF2-SHA256 and random salt
+    Returns: salt:hash (both hex encoded)
+    """
+    if salt is None:
+        salt = secrets.token_bytes(PASSWORD_SALT_LENGTH)
+
+    # Use PBKDF2 with SHA256
+    dk = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt,
+        PASSWORD_ITERATIONS
+    )
+    return f"{salt.hex()}:{dk.hex()}"
 
 
-# Admin password: "admin123"
-# Pre-computed hash (simple password without special characters)
-ADMIN_PASSWORD_HASH = "eefe9baf8455e2d688e375da8aa9103ee8785326e28fcbd7e9fbde4aa6d3e073"
+def verify_password_hash(password: str, stored_hash: str) -> bool:
+    """Verify password against stored PBKDF2 hash"""
+    try:
+        salt_hex, hash_hex = stored_hash.split(':')
+        salt = bytes.fromhex(salt_hex)
+        expected_hash = hash_password(password, salt)
+        return secrets.compare_digest(expected_hash, stored_hash)
+    except (ValueError, AttributeError):
+        return False
+
+
+# Admin password - generate secure hash at startup
+# Default admin password: read from ADMIN_PASSWORD env var or generate random
+DEFAULT_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+if not DEFAULT_ADMIN_PASSWORD:
+    # Generate random password if not set
+    DEFAULT_ADMIN_PASSWORD = secrets.token_urlsafe(16)
+    import logging
+    logging.warning("ADMIN_PASSWORD not set, using random password. Set ADMIN_PASSWORD env var in production.")
+
+ADMIN_PASSWORD_HASH = hash_password(DEFAULT_ADMIN_PASSWORD)
 
 # Hardcoded admin user (can be extended to database later)
 ADMIN_USERS = {
@@ -67,33 +111,34 @@ ADMIN_USERS = {
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash"""
-    return hash_password(plain_password) == hashed_password
+    return verify_password_hash(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
+    """Hash a password for storage"""
     return hash_password(password)
 
 
 def get_user(username: str) -> Optional[UserInDB]:
-    """Get user from database/dict"""
-    # Check hardcoded admin users first
+    """Get user from SQL Server database"""
+    # Check hardcoded admin users first (fallback)
     if username in ADMIN_USERS:
         user_dict = ADMIN_USERS[username]
         return UserInDB(**user_dict)
 
-    # Check dynamic users from main.py (late import to avoid circular imports)
+    # Check users from SQL Server
     try:
-        from src.api.main import _users_db
-        for user in _users_db:
-            if user.get("username") == username:
-                return UserInDB(
-                    username=user["username"],
-                    hashed_password=user.get("hashed_password", ""),
-                    disabled=not user.get("is_active", True)
-                )
-    except ImportError:
-        pass
+        from src.db.sqlserver import db as sqlserver_db
+        user = sqlserver_db.get_user_by_username(username)
+        if user:
+            return UserInDB(
+                username=user["username"],
+                hashed_password=user.get("hashed_password", ""),
+                disabled=not user.get("is_active", True)
+            )
+    except Exception as e:
+        # Log error but don't fail
+        print(f"Warning: Could not fetch user from database: {e}")
 
     return None
 

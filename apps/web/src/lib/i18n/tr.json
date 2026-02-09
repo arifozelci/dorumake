@@ -41,7 +41,7 @@
     "logout": "Çıkış Yap"
   },
   "sidebar": {
-    "orderAutomation": "Sipariş Otomasyonu",
+    "orderAutomation": "RPA Yönetim Paneli",
     "systemActive": "Sistem Aktif",
     "allServicesRunning": "Tüm servisler çalışıyor"
   },
@@ -55,9 +55,9 @@
     "loggingIn": "Giriş yapılıyor...",
     "loginError": "Giriş Hatası",
     "loginFailed": "Giriş başarısız",
-    "orderAutomationSystem": "Sipariş Otomasyon Sistemi",
-    "manageOrdersAutomatically": "Siparişlerinizi Otomatik Yönetin",
-    "systemDescription": "Tedarikçi portallarına otomatik sipariş girişi yapan güçlü RPA sisteminiz. Mann & Hummel ve Mutlu Akü entegrasyonları.",
+    "orderAutomationSystem": "RPA Yönetim Paneli",
+    "manageOrdersAutomatically": "İş Süreçlerinizi Otomatikleştirin",
+    "systemDescription": "İş süreçlerinizi otomatikleştiren akıllı RPA platformu. Hızlı, güvenilir, kesintisiz.",
     "nonstopOperation": "Kesintisiz Çalışma",
     "successRate": "Başarı Oranı",
     "supplier": "Tedarikçi"
@@ -75,9 +75,9 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "subtitle": "Sipariş otomasyon sistemine genel bakış",
+    "subtitle": "Otomasyon sistemine genel bakış",
     "welcome": "Hoşgeldiniz!",
-    "welcomeMessage": "Sipariş otomasyon sisteminiz aktif ve çalışıyor. Günlük operasyonlarınızı buradan takip edebilirsiniz.",
+    "welcomeMessage": "Otomasyon sisteminiz aktif ve çalışıyor. Günlük operasyonlarınızı buradan takip edebilirsiniz.",
     "systemStatus": "Sistem Durumu",
     "allServicesActive": "Tüm servisler aktif",
     "someServicesDown": "Bazı servisler çalışmıyor",

@@ -1,5 +1,5 @@
 """
-DoruMake Configuration Settings
+KolayRobot Configuration Settings
 Pydantic-based settings management with environment variable support
 """
 
@@ -158,7 +158,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    app_name: str = "DoruMake"
+    app_name: str = "KolayRobot"
     app_version: str = "1.0.0"
     debug: bool = False
     environment: str = "production"

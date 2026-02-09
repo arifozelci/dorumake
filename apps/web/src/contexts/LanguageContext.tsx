@@ -11,7 +11,7 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-const LOCALE_STORAGE_KEY = 'dorumake_locale';
+const LOCALE_STORAGE_KEY = 'kolayrobot_locale';
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(defaultLocale);

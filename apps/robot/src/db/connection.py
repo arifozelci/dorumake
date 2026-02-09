@@ -1,5 +1,5 @@
 """
-DoruMake Database Connection
+KolayRobot Database Connection
 SQLAlchemy async connection management
 """
 

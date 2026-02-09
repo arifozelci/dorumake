@@ -1,5 +1,5 @@
 """
-DoruMake CSV Generator
+KolayRobot CSV Generator
 Generates CSV files in TecCom format for Mann & Hummel orders
 """
 
@@ -18,18 +18,34 @@ class CsvGenerator:
 
     Generates CSV files in the format expected by TecCom:
     Siparis_formu_TecOrder_2018.csv
+
+    Format structure:
+    - Uses comma (,) as delimiter
+    - leer prefix for empty/info rows
+    - head prefix for header area
+    - POS prefix for product/data rows
+    - 8 columns total
     """
 
     # TecCom CSV format settings
-    DELIMITER = ';'
-    ENCODING = 'utf-8-sig'  # BOM for Excel compatibility
+    DELIMITER = ','
+    ENCODING = 'iso-8859-9'  # ISO-8859-9 (Latin-5/Turkish) encoding - supports Turkish characters
 
     # Header template
-    HEADER_TITLE = "TecLocal/TecWeb Kanalı ile Sipariş Formu"
+    HEADER_TITLE = "TecLocal/TecWeb Kanalıyla Sipariş Formu"
+
+    # Row prefixes
+    PREFIX_EMPTY = "leer"
+    PREFIX_HEAD = "head"
+    PREFIX_DATA = "POS"
 
     def __init__(self, output_dir: str = "downloads"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _empty_row(self) -> List[str]:
+        """Generate empty leer row with 8 columns"""
+        return [self.PREFIX_EMPTY, "", "", "", "", "", "", ""]
 
     def generate_from_order(
         self,
@@ -37,7 +53,7 @@ class CsvGenerator:
         filename: Optional[str] = None
     ) -> str:
         """
-        Generate CSV file from OrderData
+        Generate CSV file from OrderData in TecCom format
 
         Args:
             order: OrderData object
@@ -58,29 +74,76 @@ class CsvGenerator:
         with open(file_path, 'w', newline='', encoding=self.ENCODING) as f:
             writer = csv.writer(f, delimiter=self.DELIMITER)
 
-            # Header row
-            writer.writerow([self.HEADER_TITLE, "", "", ""])
+            # 5 empty leer rows
+            for _ in range(5):
+                writer.writerow(self._empty_row())
+
+            # Title row
+            writer.writerow([self.PREFIX_EMPTY, self.HEADER_TITLE, "", "", "", "", "", ""])
 
             # Empty row
-            writer.writerow([])
+            writer.writerow(self._empty_row())
 
-            # Column headers
-            writer.writerow(["Sıra No", "Parça Numarası", "Miktar", "Parça Adı"])
+            # Tracking number row (optional - can be filled with order code)
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                f"Siparişimiz için Belirlediğimiz Takip Numaramız",
+                f"Kurumumuz Adına \nSipariş Veren Kişi",
+                "", "", "", "", ""
+            ])
 
-            # Data rows
-            for i, item in enumerate(order.items, 1):
+            # Head row
+            writer.writerow([self.PREFIX_HEAD, "", "", "", "", "", "", ""])
+
+            # 3 empty rows
+            for _ in range(3):
+                writer.writerow(self._empty_row())
+
+            # Instruction row 1
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                "Kırmızı ile işaretli alanlar zorunludur,yoksa hata verir",
+                "", "", "", "", "", ""
+            ])
+
+            # Instruction row 2
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                "Bir seferde en fazla 750 kalem ürün için kullanılması uygundur",
+                "", "", "", "", "", ""
+            ])
+
+            # Empty row
+            writer.writerow(self._empty_row())
+
+            # Column headers row
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                "Sıra No",
+                "Parça No",
+                "Adet",
+                "", "", "",
+                "Parça Adı"
+            ])
+
+            # Data rows with POS prefix
+            row_num = 1
+            for item in order.items:
                 if item.quantity <= 0:
                     continue
 
                 writer.writerow([
-                    str(i),
+                    self.PREFIX_DATA,
+                    str(row_num),
                     item.product_code,
                     str(item.quantity),
+                    "", "", "",
                     item.product_name or ""
                 ])
+                row_num += 1
 
         logger.info(
-            f"Generated CSV with {len(order.items)} items: {file_path}"
+            f"Generated CSV with {row_num - 1} items: {file_path}"
         )
 
         return str(file_path)
@@ -92,7 +155,7 @@ class CsvGenerator:
         filename: Optional[str] = None
     ) -> str:
         """
-        Generate CSV file from item list
+        Generate CSV file from item list in TecCom format
 
         Args:
             items: List of item dicts with product_code and quantity
@@ -115,16 +178,59 @@ class CsvGenerator:
         with open(file_path, 'w', newline='', encoding=self.ENCODING) as f:
             writer = csv.writer(f, delimiter=self.DELIMITER)
 
-            # Header row
-            writer.writerow([self.HEADER_TITLE, "", "", ""])
+            # 5 empty leer rows
+            for _ in range(5):
+                writer.writerow(self._empty_row())
+
+            # Title row
+            writer.writerow([self.PREFIX_EMPTY, self.HEADER_TITLE, "", "", "", "", "", ""])
 
             # Empty row
-            writer.writerow([])
+            writer.writerow(self._empty_row())
 
-            # Column headers
-            writer.writerow(["Sıra No", "Parça Numarası", "Miktar", "Parça Adı"])
+            # Tracking number row
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                f"Siparişimiz için Belirlediğimiz Takip Numaramız",
+                f"Kurumumuz Adına \nSipariş Veren Kişi",
+                "", "", "", "", ""
+            ])
 
-            # Data rows
+            # Head row
+            writer.writerow([self.PREFIX_HEAD, "", "", "", "", "", "", ""])
+
+            # 3 empty rows
+            for _ in range(3):
+                writer.writerow(self._empty_row())
+
+            # Instruction row 1
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                "Kırmızı ile işaretli alanlar zorunludur,yoksa hata verir",
+                "", "", "", "", "", ""
+            ])
+
+            # Instruction row 2
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                "Bir seferde en fazla 750 kalem ürün için kullanılması uygundur",
+                "", "", "", "", "", ""
+            ])
+
+            # Empty row
+            writer.writerow(self._empty_row())
+
+            # Column headers row
+            writer.writerow([
+                self.PREFIX_EMPTY,
+                "Sıra No",
+                "Parça No",
+                "Adet",
+                "", "", "",
+                "Parça Adı"
+            ])
+
+            # Data rows with POS prefix
             row_num = 1
             for item in items:
                 quantity = item.get('quantity', 0)
@@ -135,9 +241,11 @@ class CsvGenerator:
                 product_name = item.get('product_name') or item.get('name', '')
 
                 writer.writerow([
+                    self.PREFIX_DATA,
                     str(row_num),
                     product_code,
                     str(quantity),
+                    "", "", "",
                     product_name
                 ])
                 row_num += 1
@@ -150,7 +258,7 @@ class CsvGenerator:
 
     def validate_csv(self, file_path: str) -> Dict[str, Any]:
         """
-        Validate a generated CSV file
+        Validate a generated CSV file in TecCom format
 
         Args:
             file_path: Path to CSV file
@@ -171,61 +279,70 @@ class CsvGenerator:
                 reader = csv.reader(f, delimiter=self.DELIMITER)
                 rows = list(reader)
 
-            # Check header
-            if len(rows) < 3:
+            # Check minimum rows (header structure + at least 1 data row)
+            if len(rows) < 18:
                 result["valid"] = False
                 result["errors"].append("File too short - missing header or data rows")
                 return result
 
-            # Check title row
-            if self.HEADER_TITLE not in str(rows[0]):
+            # Check title row (row 5, 0-indexed)
+            title_found = False
+            for row in rows[:10]:
+                if self.HEADER_TITLE in str(row):
+                    title_found = True
+                    break
+            if not title_found:
                 result["warnings"].append("Missing or incorrect title row")
 
-            # Check column headers
-            headers = rows[2] if len(rows) > 2 else []
-            expected_headers = ["Sıra No", "Parça Numarası", "Miktar", "Parça Adı"]
+            # Check for head row
+            head_found = False
+            for row in rows:
+                if row and row[0] == self.PREFIX_HEAD:
+                    head_found = True
+                    break
+            if not head_found:
+                result["warnings"].append("Missing head row")
 
-            for i, expected in enumerate(expected_headers):
-                if i >= len(headers) or expected not in headers[i]:
-                    result["warnings"].append(f"Column {i+1} header mismatch")
-
-            # Check data rows
-            for row_idx, row in enumerate(rows[3:], 4):
-                if len(row) < 3:
-                    result["warnings"].append(f"Row {row_idx} has insufficient columns")
+            # Check data rows (rows with POS prefix)
+            for row_idx, row in enumerate(rows):
+                if not row or len(row) < 4:
                     continue
 
-                seq_no, product_code, quantity, *rest = row
+                # Check if this is a data row (POS prefix)
+                if row[0] != self.PREFIX_DATA:
+                    continue
 
-                # Check sequence number
-                expected_seq = row_idx - 3
-                try:
-                    if int(seq_no) != expected_seq:
-                        result["warnings"].append(f"Row {row_idx} sequence mismatch")
-                except ValueError:
-                    result["warnings"].append(f"Row {row_idx} invalid sequence number")
+                seq_no = row[1] if len(row) > 1 else ""
+                product_code = row[2] if len(row) > 2 else ""
+                quantity = row[3] if len(row) > 3 else ""
 
                 # Check product code
                 if not product_code.strip():
-                    result["errors"].append(f"Row {row_idx} missing product code")
+                    result["errors"].append(f"Row {row_idx + 1} missing product code")
                     result["valid"] = False
+                    continue
 
                 # Check quantity
                 try:
                     qty = int(quantity)
                     if qty <= 0:
-                        result["warnings"].append(f"Row {row_idx} has zero or negative quantity")
+                        result["warnings"].append(f"Row {row_idx + 1} has zero or negative quantity")
                     else:
                         result["total_quantity"] += qty
                 except ValueError:
-                    result["errors"].append(f"Row {row_idx} invalid quantity")
+                    result["errors"].append(f"Row {row_idx + 1} invalid quantity: {quantity}")
                     result["valid"] = False
+                    continue
 
                 result["item_count"] += 1
 
             # Check item count (TecCom limit is 750)
             if result["item_count"] > 750:
                 result["errors"].append(f"Too many items ({result['item_count']}). TecCom limit is 750.")
+                result["valid"] = False
+
+            if result["item_count"] == 0:
+                result["errors"].append("No data rows found (rows with POS prefix)")
                 result["valid"] = False
 
         except Exception as e:

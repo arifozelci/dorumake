@@ -29,22 +29,22 @@ interface NavItem {
 }
 
 const mainNavItems: NavItem[] = [
-  { key: 'nav.dashboard', href: '/', icon: LayoutDashboard },
-  { key: 'nav.orders', href: '/orders', icon: ShoppingCart },
-  { key: 'nav.emails', href: '/emails', icon: Mail },
-  { key: 'nav.logs', href: '/logs', icon: FileText },
+  { key: 'nav.dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { key: 'nav.orders', href: '/dashboard/orders', icon: ShoppingCart },
+  { key: 'nav.emails', href: '/dashboard/emails', icon: Mail },
+  { key: 'nav.logs', href: '/dashboard/logs', icon: FileText },
 ];
 
 const managementNavItems: NavItem[] = [
-  { key: 'nav.suppliers', href: '/suppliers', icon: Building2 },
-  { key: 'nav.users', href: '/users', icon: Users },
-  { key: 'nav.templates', href: '/templates', icon: FileEdit },
+  { key: 'nav.suppliers', href: '/dashboard/suppliers', icon: Building2 },
+  { key: 'nav.users', href: '/dashboard/users', icon: Users },
+  { key: 'nav.templates', href: '/dashboard/templates', icon: FileEdit },
 ];
 
 const systemNavItems: NavItem[] = [
-  { key: 'nav.notifications', href: '/notifications', icon: Bell },
-  { key: 'nav.scheduler', href: '/scheduler', icon: Calendar },
-  { key: 'nav.settings', href: '/settings', icon: Settings },
+  { key: 'nav.notifications', href: '/dashboard/notifications', icon: Bell },
+  { key: 'nav.scheduler', href: '/dashboard/scheduler', icon: Calendar },
+  { key: 'nav.settings', href: '/dashboard/settings', icon: Settings },
 ];
 
 interface NavSectionProps {
@@ -52,9 +52,10 @@ interface NavSectionProps {
   items: NavItem[];
   pathname: string;
   t: (key: string) => string;
+  onLinkClick?: () => void;
 }
 
-function NavSection({ title, items, pathname, t }: NavSectionProps) {
+function NavSection({ title, items, pathname, t, onLinkClick }: NavSectionProps) {
   return (
     <div className="mb-6">
       {title && (
@@ -69,6 +70,7 @@ function NavSection({ title, items, pathname, t }: NavSectionProps) {
             <Link
               key={item.key}
               href={item.href}
+              onClick={onLinkClick}
               className={cn(
                 'group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium',
                 'transition-all duration-200 ease-out',
@@ -94,7 +96,11 @@ function NavSection({ title, items, pathname, t }: NavSectionProps) {
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void;
+}
+
+export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useTranslation();
@@ -108,12 +114,12 @@ export function Sidebar() {
     <aside className="w-64 bg-white border-r border-gray-100 min-h-screen flex flex-col">
       {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-gray-100">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href="/dashboard" onClick={onClose} className="flex items-center gap-3 group">
           <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/30 transition-transform duration-200 group-hover:scale-105">
-            <span className="text-white font-bold text-xl">D</span>
+            <span className="text-white font-bold text-xl">K</span>
           </div>
           <div>
-            <span className="font-bold text-lg text-gray-900 block leading-tight">DoruMake</span>
+            <span className="font-bold text-lg text-gray-900 block leading-tight">KolayRobot</span>
             <span className="text-xs text-gray-400">{t('sidebar.orderAutomation')}</span>
           </div>
         </Link>
@@ -121,9 +127,9 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 overflow-y-auto">
-        <NavSection items={mainNavItems} pathname={pathname} t={t} />
-        <NavSection title={t('nav.management')} items={managementNavItems} pathname={pathname} t={t} />
-        <NavSection title={t('nav.system')} items={systemNavItems} pathname={pathname} t={t} />
+        <NavSection items={mainNavItems} pathname={pathname} t={t} onLinkClick={onClose} />
+        <NavSection title={t('nav.management')} items={managementNavItems} pathname={pathname} t={t} onLinkClick={onClose} />
+        <NavSection title={t('nav.system')} items={systemNavItems} pathname={pathname} t={t} onLinkClick={onClose} />
       </nav>
 
       {/* Status, Language & Logout */}

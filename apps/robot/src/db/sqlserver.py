@@ -1,5 +1,5 @@
 """
-SQL Server Database Helper for DoruMake
+SQL Server Database Helper for KolayRobot
 Provides direct database operations using pyodbc
 
 This module does not depend on SQLAlchemy async engine or aioodbc.
@@ -209,6 +209,12 @@ class SQLServerDB:
 
             return emails, total
 
+    def get_known_message_ids(self) -> set:
+        """Get all message_ids from emails table for dedup"""
+        with self.get_cursor() as cursor:
+            cursor.execute("SELECT message_id FROM emails WHERE message_id IS NOT NULL")
+            return {row[0] for row in cursor.fetchall()}
+
     def save_email(self, message_id: str, subject: str, from_address: str,
                    to_address: str, received_at: datetime, supplier_type: str = None,
                    status: str = "PENDING", has_attachment: bool = False, **kwargs) -> int:
@@ -266,7 +272,7 @@ class SQLServerDB:
             cursor.execute(f"""
                 SELECT id, order_code, supplier_type, status, error_message,
                        customer_name, customer_code, total_items as item_count,
-                       portal_order_number as portal_order_no, created_at, processed_at as completed_at
+                       portal_order_number, created_at, processed_at as completed_at
                 FROM orders
                 {where_clause}
                 ORDER BY created_at DESC
@@ -294,7 +300,7 @@ class SQLServerDB:
             cursor.execute("""
                 SELECT id, order_code, supplier_type, status, error_message,
                        customer_name, customer_code, total_items as item_count,
-                       portal_order_number as portal_order_no, created_at, processed_at as completed_at,
+                       portal_order_number, created_at, processed_at as completed_at,
                        email_id, attachment_filename, attachment_path
                 FROM orders
                 WHERE id = ?

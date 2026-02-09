@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogIn, AlertCircle, Loader2, Mail, ArrowLeft, CheckCircle, Lock, User, Zap } from 'lucide-react';
+import { LogIn, AlertCircle, Loader2, Mail, ArrowLeft, CheckCircle, Lock, User, Zap, Home } from 'lucide-react';
+import Link from 'next/link';
 import { authService } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -27,7 +28,7 @@ export default function LoginPage() {
 
     try {
       await authService.login({ username, password });
-      router.push('/');
+      router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Giriş başarısız');
     } finally {
@@ -83,18 +84,17 @@ export default function LoginPage() {
               <Zap className="w-8 h-8 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white">DoruMake</h1>
-              <p className="text-primary-100">Sipariş Otomasyon Sistemi</p>
+              <h1 className="text-3xl font-bold text-white">KolayRobot</h1>
+              <p className="text-primary-100">RPA Yönetim Paneli</p>
             </div>
           </div>
 
           <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
-            Siparişlerinizi<br />
-            Otomatik Yönetin
+            İş Süreçlerinizi<br />
+            Otomatikleştirin
           </h2>
           <p className="text-primary-100 text-lg max-w-md">
-            Tedarikçi portallarına otomatik sipariş girişi yapan güçlü RPA sisteminiz.
-            Mann & Hummel ve Mutlu Akü entegrasyonları.
+            İş süreçlerinizi otomatikleştiren akıllı RPA platformu. Hızlı, güvenilir, kesintisiz.
           </p>
 
           <div className="mt-12 flex items-center gap-8">
@@ -107,25 +107,32 @@ export default function LoginPage() {
               <p className="text-3xl font-bold text-white">%99</p>
               <p className="text-primary-200 text-sm">Başarı Oranı</p>
             </div>
-            <div className="w-px h-12 bg-white/20" />
-            <div>
-              <p className="text-3xl font-bold text-white">2</p>
-              <p className="text-primary-200 text-sm">Tedarikçi</p>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="flex-1 flex items-center justify-center p-6 bg-gray-50">
+      <div className="flex-1 flex flex-col p-6 bg-gray-50">
+        {/* Back to Landing */}
+        <div className="flex justify-start mb-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-primary-600 transition-colors"
+          >
+            <Home className="w-4 h-4" />
+            Ana Sayfa
+          </Link>
+        </div>
+
+        <div className="flex-1 flex items-center justify-center">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4 shadow-lg shadow-primary-500/30">
               <Zap className="w-9 h-9 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">DoruMake</h1>
-            <p className="text-gray-500 mt-1">Sipariş Otomasyon Sistemi</p>
+            <h1 className="text-2xl font-bold text-gray-900">KolayRobot</h1>
+            <p className="text-gray-500 mt-1">RPA Yönetim Paneli</p>
           </div>
 
           {/* Login Card */}
@@ -351,8 +358,9 @@ export default function LoginPage() {
 
           {/* Footer */}
           <p className="text-center text-sm text-gray-400 mt-8">
-            DoruMake v1.0.0 - Doru Finansal
+            KolayRobot v1.0.0 - Doru Finansal
           </p>
+        </div>
         </div>
       </div>
     </div>

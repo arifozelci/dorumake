@@ -1,5 +1,5 @@
 """
-DoruMake API
+KolayRobot API
 FastAPI application for admin panel communication
 """
 
@@ -7,7 +7,7 @@ FastAPI application for admin panel communication
 from dotenv import load_dotenv
 load_dotenv()
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +34,7 @@ from src.db.sqlserver import db as sqlserver_db
 
 # Create FastAPI app
 app = FastAPI(
-    title="DoruMake API",
+    title="KolayRobot API",
     description="Order Automation System API",
     version=settings.app_version,
     docs_url="/api/docs" if settings.debug else None,
@@ -43,8 +43,10 @@ app = FastAPI(
 
 # CORS middleware - Restrict to allowed origins
 ALLOWED_ORIGINS = [
-    "https://93-94-251-138.sslip.io",  # Production admin panel
-    "http://localhost:3000",             # Local development
+    "https://kolayrobot.com",             # Production admin panel
+    "https://www.kolayrobot.com",         # Production admin panel (www)
+    "https://93-94-251-138.sslip.io",    # Legacy admin panel
+    "http://localhost:3000",              # Local development
     "http://127.0.0.1:3000",             # Local development alt
 ]
 
@@ -76,6 +78,7 @@ class OrderResponse(BaseModel):
     customer_name: Optional[str]
     item_count: int
     total_amount: Optional[float]
+    portal_order_number: Optional[str] = None
     created_at: str
     completed_at: Optional[str]
     error_message: Optional[str]
@@ -294,7 +297,7 @@ async def forgot_password(request: ForgotPasswordRequest):
             email_sender = EmailSender()
             email_sent = email_sender.send_email(
                 to=request.email,
-                subject="DoruMake - Şifre Sıfırlama",
+                subject="KolayRobot - Şifre Sıfırlama",
                 body=f"""Merhaba {user.get('full_name', user['username'])},
 
 Şifre sıfırlama talebiniz alındı.
@@ -303,10 +306,10 @@ Yeni geçici şifreniz: {new_password}
 
 Lütfen giriş yaptıktan sonra şifrenizi değiştirin.
 
-Giriş adresi: https://93-94-251-138.sslip.io/login
+Giriş adresi: https://kolayrobot.com/login
 
 İyi çalışmalar,
-DoruMake Ekibi"""
+KolayRobot Ekibi"""
             )
 
         # Return same message even if user not found (security)
@@ -507,7 +510,7 @@ async def list_orders(
             "page_size": page_size,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.get("/api/orders/{order_id}", response_model=OrderResponse)
@@ -521,7 +524,7 @@ async def get_order(order_id: str, current_user: User = Depends(get_current_acti
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.post("/api/orders/{order_id}/retry")
@@ -554,7 +557,7 @@ async def retry_order(order_id: str, current_user: User = Depends(get_current_ac
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.get("/api/orders/{order_id}/logs")
@@ -564,7 +567,7 @@ async def get_order_logs(order_id: str, current_user: User = Depends(get_current
         logs = sqlserver_db.get_order_logs(order_id)
         return {"logs": logs, "total": len(logs)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.get("/api/screenshots/{path:path}")
@@ -616,6 +619,16 @@ async def get_order_attachment(order_id: str, current_user: User = Depends(get_c
         if not attachment_path or not os.path.exists(attachment_path):
             raise HTTPException(status_code=404, detail="Attachment not found")
 
+        # Security check - ensure path doesn't escape allowed directories
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        allowed_dirs = [
+            os.path.realpath(os.path.join(base_dir, "downloads")),
+            os.path.realpath(os.path.join(base_dir, "attachments")),
+        ]
+        real_path = os.path.realpath(attachment_path)
+        if not any(real_path.startswith(d) for d in allowed_dirs):
+            raise HTTPException(status_code=403, detail="Access denied")
+
         return FileResponse(
             path=attachment_path,
             filename=attachment_filename or os.path.basename(attachment_path),
@@ -624,7 +637,7 @@ async def get_order_attachment(order_id: str, current_user: User = Depends(get_c
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 # ============================================
@@ -810,7 +823,7 @@ async def process_order(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.get("/api/emails")
@@ -841,7 +854,7 @@ async def list_emails(
             "page_size": page_size,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.post("/api/emails/fetch")
@@ -980,7 +993,7 @@ async def fetch_emails_from_imap(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"IMAP error: {str(e)}")
+        raise HTTPException(status_code=500, detail="E-posta sunucu hatası oluştu")
 
 
 @app.get("/api/logs")
@@ -1098,7 +1111,7 @@ async def get_audit_logs(
             "page_size": page_size,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.post("/api/orders/manual")
@@ -1136,46 +1149,51 @@ async def list_suppliers(current_user: User = Depends(get_current_active_user)):
 async def get_scheduler_jobs(current_user: User = Depends(get_current_active_user)):
     """Get scheduled jobs"""
     # Return configured scheduled jobs
+    now = datetime.now(timezone.utc)
     jobs = [
         {
             "id": "email_poll",
             "name": "Email Polling",
+            "trigger": "interval[0:01:00]",
             "description": "IMAP'ten yeni sipariş emaillerini kontrol eder",
             "schedule": "Her 60 saniyede bir",
             "cron": "*/1 * * * *",
             "status": "active",
-            "last_run": datetime.utcnow().isoformat(),
-            "next_run": (datetime.utcnow() + timedelta(seconds=60)).isoformat(),
+            "last_run": now.isoformat(),
+            "next_run": (now + timedelta(seconds=60)).isoformat(),
         },
         {
             "id": "order_processor",
             "name": "Order Processor",
+            "trigger": "interval[0:05:00]",
             "description": "Bekleyen siparişleri işler",
             "schedule": "Her 5 dakikada bir",
             "cron": "*/5 * * * *",
             "status": "active",
-            "last_run": datetime.utcnow().isoformat(),
-            "next_run": (datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+            "last_run": now.isoformat(),
+            "next_run": (now + timedelta(minutes=5)).isoformat(),
         },
         {
             "id": "health_check",
             "name": "Health Check",
+            "trigger": "interval[0:10:00]",
             "description": "Sistem sağlık kontrolü yapar",
             "schedule": "Her 10 dakikada bir",
             "cron": "*/10 * * * *",
             "status": "active",
-            "last_run": datetime.utcnow().isoformat(),
-            "next_run": (datetime.utcnow() + timedelta(minutes=10)).isoformat(),
+            "last_run": now.isoformat(),
+            "next_run": (now + timedelta(minutes=10)).isoformat(),
         },
         {
             "id": "log_cleanup",
             "name": "Log Cleanup",
+            "trigger": "cron[0 0 * * *]",
             "description": "Eski log dosyalarını temizler",
             "schedule": "Her gün gece yarısı",
             "cron": "0 0 * * *",
             "status": "active",
-            "last_run": datetime.utcnow().replace(hour=0, minute=0, second=0).isoformat(),
-            "next_run": (datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)).isoformat(),
+            "last_run": now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),
+            "next_run": (now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).isoformat(),
         },
     ]
     return {"jobs": jobs}
@@ -1244,7 +1262,7 @@ async def list_users(current_user: User = Depends(get_current_active_user)):
         users = sqlserver_db.get_users()
         return users
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.post("/api/users/create-with-email", response_model=UserResponse)
@@ -1279,20 +1297,20 @@ async def create_user_with_email(
         email_sender = EmailSender()
         email_sent = email_sender.send_email(
             to=request.email,
-            subject="DoruMake - Hoş Geldiniz",
+            subject="KolayRobot - Hoş Geldiniz",
             body=f"""Merhaba {request.full_name or request.username},
 
-DoruMake sistemine hoş geldiniz!
+KolayRobot sistemine hoş geldiniz!
 
 Kullanıcı adınız: {request.username}
 Geçici şifreniz: {password}
 
 Lütfen ilk girişinizde şifrenizi değiştirin.
 
-Giriş adresi: https://93-94-251-138.sslip.io/login
+Giriş adresi: https://kolayrobot.com/login
 
 İyi çalışmalar,
-DoruMake Ekibi"""
+KolayRobot Ekibi"""
         )
 
         if not email_sent:
@@ -1303,7 +1321,7 @@ DoruMake Ekibi"""
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.put("/api/users/{user_id}", response_model=UserResponse)
@@ -1333,7 +1351,7 @@ async def update_user(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.delete("/api/users/{user_id}")
@@ -1359,7 +1377,7 @@ async def delete_user(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 @app.post("/api/users/{user_id}/reset-password")
@@ -1383,7 +1401,7 @@ async def reset_user_password(
         email_sender = EmailSender()
         email_sent = email_sender.send_email(
             to=user["email"],
-            subject="DoruMake - Şifre Sıfırlama",
+            subject="KolayRobot - Şifre Sıfırlama",
             body=f"""Merhaba {user.get('full_name', user['username'])},
 
 Şifreniz sıfırlandı.
@@ -1392,10 +1410,10 @@ Yeni geçici şifreniz: {new_password}
 
 Lütfen giriş yaptıktan sonra şifrenizi değiştirin.
 
-Giriş adresi: https://93-94-251-138.sslip.io/login
+Giriş adresi: https://kolayrobot.com/login
 
 İyi çalışmalar,
-DoruMake Ekibi"""
+KolayRobot Ekibi"""
         )
 
         return {
@@ -1406,7 +1424,7 @@ DoruMake Ekibi"""
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sunucu hatası oluştu")
 
 
 # ============================================
@@ -1418,10 +1436,10 @@ _templates_db: List[dict] = [
     {
         "id": 1,
         "name": "new_user",
-        "subject": "DoruMake - Hoş Geldiniz",
+        "subject": "KolayRobot - Hoş Geldiniz",
         "body": """Merhaba {full_name},
 
-DoruMake sistemine hoş geldiniz!
+KolayRobot sistemine hoş geldiniz!
 
 Kullanıcı adınız: {username}
 Geçici şifreniz: {password}
@@ -1429,7 +1447,7 @@ Geçici şifreniz: {password}
 Lütfen ilk girişinizde şifrenizi değiştirin.
 
 İyi çalışmalar,
-DoruMake Ekibi""",
+KolayRobot Ekibi""",
         "description": "Yeni kullanıcı oluşturulduğunda gönderilir",
         "variables": ["full_name", "username", "password"],
         "is_active": True,
@@ -1438,7 +1456,7 @@ DoruMake Ekibi""",
     {
         "id": 2,
         "name": "password_reset",
-        "subject": "DoruMake - Şifre Sıfırlama",
+        "subject": "KolayRobot - Şifre Sıfırlama",
         "body": """Merhaba {full_name},
 
 Şifreniz sıfırlandı.
@@ -1448,7 +1466,7 @@ Yeni geçici şifreniz: {password}
 Lütfen giriş yaptıktan sonra şifrenizi değiştirin.
 
 İyi çalışmalar,
-DoruMake Ekibi""",
+KolayRobot Ekibi""",
         "description": "Şifre sıfırlandığında gönderilir",
         "variables": ["full_name", "password"],
         "is_active": True,
@@ -1457,7 +1475,7 @@ DoruMake Ekibi""",
     {
         "id": 3,
         "name": "order_error",
-        "subject": "DoruMake - Sipariş Hatası: {order_code}",
+        "subject": "KolayRobot - Sipariş Hatası: {order_code}",
         "body": """Sipariş işlenirken hata oluştu.
 
 Sipariş Kodu: {order_code}
@@ -1466,7 +1484,7 @@ Hata: {error_message}
 
 Lütfen kontrol edin.
 
-DoruMake Sistemi""",
+KolayRobot Sistemi""",
         "description": "Sipariş hatası oluştuğunda gönderilir",
         "variables": ["order_code", "supplier", "error_message"],
         "is_active": True,
@@ -1475,14 +1493,14 @@ DoruMake Sistemi""",
     {
         "id": 4,
         "name": "order_completed",
-        "subject": "DoruMake - Sipariş Tamamlandı: {order_code}",
+        "subject": "KolayRobot - Sipariş Tamamlandı: {order_code}",
         "body": """Sipariş başarıyla tamamlandı.
 
 Sipariş Kodu: {order_code}
 Tedarikçi: {supplier}
 Toplam Kalem: {item_count}
 
-DoruMake Sistemi""",
+KolayRobot Sistemi""",
         "description": "Sipariş başarıyla tamamlandığında gönderilir",
         "variables": ["order_code", "supplier", "item_count"],
         "is_active": True,
@@ -1491,14 +1509,14 @@ DoruMake Sistemi""",
     {
         "id": 5,
         "name": "system_alert",
-        "subject": "DoruMake - Sistem Uyarısı",
+        "subject": "KolayRobot - Sistem Uyarısı",
         "body": """Sistem Uyarısı
 
 Seviye: {level}
 Mesaj: {message}
 Zaman: {timestamp}
 
-DoruMake Sistemi""",
+KolayRobot Sistemi""",
         "description": "Sistem uyarıları için gönderilir",
         "variables": ["level", "message", "timestamp"],
         "is_active": True,

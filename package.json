@@ -1,8 +1,8 @@
 {
-  "name": "dorumake",
+  "name": "kolayrobot",
   "version": "1.0.0",
   "private": true,
-  "description": "DoruMake - Sipariş Otomasyon Sistemi",
+  "description": "KolayRobot - Sipariş Otomasyon Sistemi",
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",

@@ -1,5 +1,5 @@
 """
-DoruMake Email Worker
+KolayRobot Email Worker
 Background worker for polling and processing order emails
 Automatically triggers robot processing after order creation
 """
@@ -90,10 +90,14 @@ class EmailWorker:
 
         try:
             async with self.fetcher as fetcher:
-                # Fetch unread emails
+                # Get known message_ids from DB for dedup
+                known_ids = db.get_known_message_ids()
+
+                # Fetch recent emails (SINCE today, skip known)
                 emails = await fetcher.fetch_unread_emails(
-                    mark_as_read=False,  # Mark as read after successful processing
-                    limit=10
+                    mark_as_read=False,
+                    limit=10,
+                    known_message_ids=known_ids
                 )
 
                 if not emails:
@@ -314,18 +318,20 @@ class EmailWorker:
             supplier = order_info['supplier_type']
             customer = order_info.get('customer_name', 'Bilinmiyor')
             item_count = order_info.get('item_count', 0)
+            db_id = order_info.get('db_id', '')
 
             supplier_name = "Mann & Hummel" if supplier == "MANN" else "Mutlu Akü" if supplier == "MUTLU" else supplier
+            order_url = f"https://kolayrobot.com/dashboard/orders/{db_id}" if db_id else "https://kolayrobot.com/dashboard/orders"
 
-            subject = f"Yeni Sipariş: {order_code} - {supplier_name}"
+            subject = f"Sipariş Başladı: {order_code} - {supplier_name}"
             body = (
-                f"Yeni sipariş oluşturuldu:\n\n"
+                f"Sipariş işleme başladı:\n\n"
                 f"Sipariş Kodu: {order_code}\n"
                 f"Tedarikçi: {supplier_name}\n"
                 f"Müşteri: {customer}\n"
                 f"Ürün Sayısı: {item_count}\n"
-                f"Durum: Robot ile işleniyor...\n\n"
-                f"Admin Panel: https://93-94-251-138.sslip.io/orders\n"
+                f"Durum: Robot portala giriş yapıyor...\n\n"
+                f"Sipariş Detay: {order_url}\n"
             )
 
             for recipient in settings.notification.recipients:
@@ -341,7 +347,9 @@ class EmailWorker:
             sender = EmailSender()
             order_code = order_info['order_code']
             supplier = order_info['supplier_type']
+            db_id = order_info.get('db_id', '')
             supplier_name = "Mann & Hummel" if supplier == "MANN" else "Mutlu Akü" if supplier == "MUTLU" else supplier
+            order_url = f"https://kolayrobot.com/dashboard/orders/{db_id}" if db_id else "https://kolayrobot.com/dashboard/orders"
 
             if result.success:
                 subject = f"Sipariş Tamamlandı: {order_code} - {supplier_name}"
@@ -351,7 +359,7 @@ class EmailWorker:
                     f"Tedarikçi: {supplier_name}\n"
                     f"Portal Sipariş No: {result.portal_order_no}\n"
                     f"Süre: {result.duration_seconds:.0f} saniye\n\n"
-                    f"Admin Panel: https://93-94-251-138.sslip.io/orders\n"
+                    f"Sipariş Detay: {order_url}\n"
                 )
             else:
                 subject = f"Sipariş HATA: {order_code} - {supplier_name}"
@@ -360,7 +368,7 @@ class EmailWorker:
                     f"Sipariş Kodu: {order_code}\n"
                     f"Tedarikçi: {supplier_name}\n"
                     f"Hata: {result.message}\n\n"
-                    f"Admin Panel: https://93-94-251-138.sslip.io/orders\n"
+                    f"Sipariş Detay: {order_url}\n"
                 )
 
             for recipient in settings.notification.recipients:

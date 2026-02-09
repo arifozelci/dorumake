@@ -111,7 +111,7 @@ export default function OrderDetailPage() {
             <AlertCircle className="w-12 h-12 text-danger-500 mx-auto" />
             <p className="mt-4 text-gray-900 font-medium">Sipariş bulunamadı</p>
             <p className="mt-2 text-gray-500">İstenen sipariş mevcut değil veya silinmiş olabilir.</p>
-            <Link href="/orders" className="btn btn-primary mt-4 inline-flex items-center">
+            <Link href="/dashboard/orders" className="btn btn-primary mt-4 inline-flex items-center">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Siparişlere Dön
             </Link>
@@ -148,6 +148,19 @@ export default function OrderDetailPage() {
               <div className="p-4 border-b border-gray-100">
                 <h2 className="font-semibold text-gray-900">Sipariş Bilgileri</h2>
               </div>
+              {/* Portal Order Number - prominent display */}
+              {order.portal_order_number && (
+                <div className="px-4 pt-4">
+                  <div className="bg-success-50 border border-success-200 rounded-lg p-4 flex items-center gap-3">
+                    <CheckCircle className="w-6 h-6 text-success-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-success-700 font-medium">Portal Sipariş Numarası</p>
+                      <p className="text-2xl font-bold text-success-800">{order.portal_order_number}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="p-4 grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Sipariş Kodu</p>
@@ -311,7 +324,7 @@ export default function OrderDetailPage() {
                   </button>
                 )}
                 <Link
-                  href="/orders"
+                  href="/dashboard/orders"
                   className="btn btn-secondary w-full flex items-center justify-center"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />

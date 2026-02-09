@@ -1,5 +1,5 @@
 """
-DoruMake Email Fetcher
+KolayRobot Email Fetcher
 IMAP-based email fetching service for order emails
 """
 
@@ -219,15 +219,21 @@ class EmailFetcher:
         self,
         folder: str = "INBOX",
         mark_as_read: bool = False,
-        limit: int = 50
+        limit: int = 50,
+        known_message_ids: set = None
     ) -> List[Dict[str, Any]]:
         """
-        Fetch unread emails from specified folder
+        Fetch recent emails from specified folder
+
+        Uses SINCE date search instead of UNSEEN to handle Gmail
+        marking emails as read when the account is open in a browser.
+        Deduplication is done via known_message_ids from the database.
 
         Args:
             folder: IMAP folder name (default: INBOX)
             mark_as_read: Whether to mark fetched emails as read
             limit: Maximum number of emails to fetch
+            known_message_ids: Set of message_ids already processed (for dedup)
 
         Returns:
             List of email data dicts
@@ -236,25 +242,45 @@ class EmailFetcher:
             raise RuntimeError("Not connected to IMAP server")
 
         emails = []
+        if known_message_ids is None:
+            known_message_ids = set()
 
         try:
             # Select folder
             self.client.select_folder(folder)
 
-            # Search for unread emails
-            messages = self.client.search(['UNSEEN'])
+            # Search for recent emails (today) instead of UNSEEN
+            # This handles Gmail marking emails as read when opened in browser
+            today = datetime.now().strftime('%d-%b-%Y')
+            messages = self.client.search(['SINCE', today])
 
             if not messages:
-                email_logger.debug("No unread emails found")
+                email_logger.debug("No recent emails found")
                 return emails
 
-            email_logger.info(f"Found {len(messages)} unread emails")
+            # First pass: fetch envelopes to check message_ids (lightweight)
+            envelopes = self.client.fetch(messages, ['ENVELOPE'])
+            new_messages = []
+            for msg_id in messages:
+                if msg_id in envelopes:
+                    envelope = envelopes[msg_id].get(b'ENVELOPE')
+                    if envelope and envelope.message_id:
+                        mid = envelope.message_id.decode('utf-8', errors='replace')
+                        if mid in known_message_ids:
+                            continue  # Already processed, skip
+                new_messages.append(msg_id)
+
+            if not new_messages:
+                email_logger.debug("No new emails (all already processed)")
+                return emails
+
+            email_logger.info(f"Found {len(new_messages)} new emails (of {len(messages)} recent)")
 
             # Limit number of messages
-            messages = messages[:limit]
+            new_messages = new_messages[:limit]
 
-            # Fetch messages
-            for msg_id in messages:
+            # Fetch full messages
+            for msg_id in new_messages:
                 try:
                     # Fetch email data
                     response = self.client.fetch([msg_id], ['RFC822', 'INTERNALDATE'])

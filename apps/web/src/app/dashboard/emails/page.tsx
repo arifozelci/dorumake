@@ -243,15 +243,21 @@ export default function EmailsPage() {
           </div>
           <div className="card p-4">
             <p className="text-sm text-gray-500">Bekleyen</p>
-            <p className="text-2xl font-semibold text-warning-500">-</p>
+            <p className="text-2xl font-semibold text-warning-500">
+              {data?.emails ? data.emails.filter(e => e.status === 'pending').length : 0}
+            </p>
           </div>
           <div className="card p-4">
             <p className="text-sm text-gray-500">İşlenen</p>
-            <p className="text-2xl font-semibold text-success-500">-</p>
+            <p className="text-2xl font-semibold text-success-500">
+              {data?.emails ? data.emails.filter(e => e.status === 'processed').length : 0}
+            </p>
           </div>
           <div className="card p-4">
             <p className="text-sm text-gray-500">Başarısız</p>
-            <p className="text-2xl font-semibold text-danger-500">-</p>
+            <p className="text-2xl font-semibold text-danger-500">
+              {data?.emails ? data.emails.filter(e => e.status === 'failed').length : 0}
+            </p>
           </div>
         </div>
 

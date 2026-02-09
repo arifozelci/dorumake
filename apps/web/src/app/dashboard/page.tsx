@@ -59,7 +59,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="Dashboard" subtitle="Sipariş otomasyon sistemine genel bakış" />
+      <Header title="Dashboard" subtitle="Otomasyon sistemine genel bakış" />
 
       <div className="p-6 space-y-6">
         {/* Welcome Banner */}
@@ -67,11 +67,11 @@ export default function DashboardPage() {
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-2">
               <Zap className="w-5 h-5" />
-              <span className="text-sm font-medium text-primary-100">DoruMake Otomasyon</span>
+              <span className="text-sm font-medium text-primary-100">KolayRobot Otomasyon</span>
             </div>
-            <h2 className="text-2xl font-bold mb-1">Hosgeldiniz!</h2>
+            <h2 className="text-2xl font-bold mb-1">Hoşgeldiniz!</h2>
             <p className="text-primary-100 max-w-lg">
-              Sipariş otomasyon sisteminiz aktif ve çalışıyor. Günlük operasyonlarınızı buradan takip edebilirsiniz.
+              Otomasyon sisteminiz aktif ve çalışıyor. Günlük operasyonlarınızı buradan takip edebilirsiniz.
             </p>
           </div>
           {/* Decorative elements */}
@@ -125,6 +125,7 @@ export default function DashboardPage() {
             icon={ShoppingCart}
             color="primary"
             loading={statsLoading}
+            href="/dashboard/orders"
           />
           <StatsCard
             title="Başarılı"
@@ -132,6 +133,7 @@ export default function DashboardPage() {
             icon={CheckCircle}
             color="success"
             loading={statsLoading}
+            href="/dashboard/orders?status=completed"
           />
           <StatsCard
             title="Başarısız"
@@ -139,6 +141,7 @@ export default function DashboardPage() {
             icon={XCircle}
             color="danger"
             loading={statsLoading}
+            href="/dashboard/orders?status=failed"
           />
           <StatsCard
             title="Bekleyen"
@@ -146,6 +149,7 @@ export default function DashboardPage() {
             icon={Clock}
             color="warning"
             loading={statsLoading}
+            href="/dashboard/orders?status=pending"
           />
         </div>
 
@@ -157,6 +161,7 @@ export default function DashboardPage() {
             icon={Mail}
             color="primary"
             loading={statsLoading}
+            href="/dashboard/emails"
           />
           <MiniStatsCard
             title="Mutlu Akü Kuyruğu"
@@ -164,6 +169,7 @@ export default function DashboardPage() {
             icon={Package}
             color="warning"
             loading={statsLoading}
+            href="/dashboard/orders?supplier=mutlu_aku&status=pending"
           />
           <MiniStatsCard
             title="Mann & Hummel Kuyruğu"
@@ -171,6 +177,7 @@ export default function DashboardPage() {
             icon={Package}
             color="success"
             loading={statsLoading}
+            href="/dashboard/orders?supplier=mann_hummel&status=pending"
           />
         </div>
 
@@ -184,7 +191,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-500 mt-0.5">Son işlenen siparişler</p>
               </div>
               <Link
-                href="/orders"
+                href="/dashboard/orders"
                 className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"
               >
                 Tümünü gör
@@ -201,6 +208,7 @@ export default function DashboardPage() {
                 onPageChange={() => {}}
                 isLoading={ordersLoading}
                 emptyMessage="Henüz sipariş yok"
+                hidePagination
               />
             </div>
           </div>
@@ -224,7 +232,7 @@ export default function DashboardPage() {
                         Bugün {stats.today_failed} sipariş başarısız oldu.
                       </p>
                       <Link
-                        href="/orders?status=failed"
+                        href="/dashboard/orders?status=failed"
                         className="inline-flex items-center gap-1 text-sm font-medium text-danger-700 hover:text-danger-800 mt-2"
                       >
                         Detayları gör

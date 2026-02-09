@@ -1,4 +1,4 @@
-# DoruMake Robot - Python Dependencies
+# KolayRobot Robot - Python Dependencies
 # Linux sunucuda native çalışacak
 
 # Web Automation

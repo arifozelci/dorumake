@@ -34,7 +34,7 @@ export default function OrdersPage() {
       key: 'order_code',
       header: 'Sipariş Kodu',
       render: (order: Order) => (
-        <Link href={`/orders/${order.id}`} className="font-medium text-primary-600 hover:underline">
+        <Link href={`/dashboard/orders/${order.id}`} className="font-medium text-primary-600 hover:underline">
           {order.order_code}
         </Link>
       ),
@@ -59,6 +59,15 @@ export default function OrdersPage() {
       render: (order: Order) => <span className="text-gray-600">{order.item_count} adet</span>,
     },
     {
+      key: 'portal_order_number',
+      header: 'Portal Sipariş No',
+      render: (order: Order) => (
+        <span className={order.portal_order_number ? 'font-semibold text-success-700' : 'text-gray-400'}>
+          {order.portal_order_number || '-'}
+        </span>
+      ),
+    },
+    {
       key: 'status',
       header: 'Durum',
       render: (order: Order) => <StatusBadge status={order.status} />,
@@ -76,7 +85,7 @@ export default function OrdersPage() {
       render: (order: Order) => (
         <div className="flex items-center gap-2">
           <Link
-            href={`/orders/${order.id}`}
+            href={`/dashboard/orders/${order.id}`}
             className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded"
             title="Detay"
           >

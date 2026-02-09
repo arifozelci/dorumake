@@ -1,5 +1,5 @@
 """
-DoruMake Retry Utilities
+KolayRobot Retry Utilities
 Exponential backoff retry mechanism with configurable policies
 """
 

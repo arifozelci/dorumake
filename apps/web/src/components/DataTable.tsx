@@ -20,6 +20,7 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void;
   isLoading?: boolean;
   emptyMessage?: string;
+  hidePagination?: boolean;
 }
 
 function SkeletonRow({ columns }: { columns: number }) {
@@ -44,6 +45,7 @@ export function DataTable<T extends { id: string }>({
   onRowClick,
   isLoading = false,
   emptyMessage = 'Veri bulunamadı',
+  hidePagination = false,
 }: DataTableProps<T>) {
   const totalPages = Math.ceil(total / pageSize);
 
@@ -89,7 +91,7 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-xl border border-gray-200/80 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-gray-200/80 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80">
@@ -97,7 +99,7 @@ export function DataTable<T extends { id: string }>({
                 <th
                   key={String(column.key)}
                   className={cn(
-                    'px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider',
+                    'px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap',
                     column.className
                   )}
                 >
@@ -110,7 +112,7 @@ export function DataTable<T extends { id: string }>({
             {data.map((item) => (
               <tr
                 key={item.id}
-                onClick={() => onRowClick?.(item)}
+                onClick={onRowClick ? () => onRowClick(item) : undefined}
                 className={cn(
                   "transition-colors duration-150 hover:bg-gray-50/50",
                   onRowClick && "cursor-pointer"
@@ -133,7 +135,7 @@ export function DataTable<T extends { id: string }>({
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {!hidePagination && totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">
             Toplam <span className="font-medium text-gray-700">{total}</span> kayit,

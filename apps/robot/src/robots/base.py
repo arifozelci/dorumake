@@ -1,5 +1,5 @@
 """
-DoruMake Base Robot
+KolayRobot Base Robot
 Abstract base class for all supplier robots
 """
 

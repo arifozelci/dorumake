@@ -49,10 +49,11 @@ export default function SuppliersPage() {
                         href={supplier.portal_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm text-primary-600 hover:underline flex items-center gap-1"
+                        className="text-sm text-primary-600 hover:underline flex items-center gap-1 min-w-0"
+                        title={supplier.portal_url}
                       >
-                        {supplier.portal_url}
-                        <ExternalLink className="w-3 h-3" />
+                        <span className="truncate">{supplier.portal_url}</span>
+                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
                       </a>
                     </div>
 

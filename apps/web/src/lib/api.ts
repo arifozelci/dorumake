@@ -60,6 +60,7 @@ export interface Order {
   customer_name: string | null;
   item_count: number;
   total_amount: number | null;
+  portal_order_number: string | null;
   created_at: string;
   completed_at: string | null;
   error_message: string | null;

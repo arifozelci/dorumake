@@ -1,5 +1,5 @@
 """
-DoruMake Scheduler
+KolayRobot Scheduler
 APScheduler-based job scheduling for background tasks
 """
 
