@@ -30,6 +30,7 @@ class CsvGenerator:
     # TecCom CSV format settings
     DELIMITER = ','
     ENCODING = 'iso-8859-9'  # ISO-8859-9 (Latin-5/Turkish) encoding - supports Turkish characters
+    MAX_PRODUCT_NAME_LENGTH = 40  # TecCom portal limit for product description
 
     # Header template
     HEADER_TITLE = "TecLocal/TecWeb Kanalıyla Sipariş Formu"
@@ -132,13 +133,14 @@ class CsvGenerator:
                 if item.quantity <= 0:
                     continue
 
+                product_name = (item.product_name or "")[:self.MAX_PRODUCT_NAME_LENGTH]
                 writer.writerow([
                     self.PREFIX_DATA,
                     str(row_num),
                     item.product_code,
                     str(item.quantity),
                     "", "", "",
-                    item.product_name or ""
+                    product_name
                 ])
                 row_num += 1
 
@@ -238,7 +240,7 @@ class CsvGenerator:
                     continue
 
                 product_code = item.get('product_code') or item.get('code', '')
-                product_name = item.get('product_name') or item.get('name', '')
+                product_name = (item.get('product_name') or item.get('name', ''))[:self.MAX_PRODUCT_NAME_LENGTH]
 
                 writer.writerow([
                     self.PREFIX_DATA,

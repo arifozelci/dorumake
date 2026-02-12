@@ -160,7 +160,7 @@ class MannHummelRobot(BaseRobot):
             for item in items:
                 product_code = item.get("product_code") or item.get("code", "")
                 quantity = item.get("quantity", 0)
-                product_name = item.get("product_name") or item.get("name", "")
+                product_name = (item.get("product_name") or item.get("name", ""))[:40]
 
                 if quantity > 0:
                     writer.writerow([PREFIX_DATA, str(row_num), product_code, str(quantity),
