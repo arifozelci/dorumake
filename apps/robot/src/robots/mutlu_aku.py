@@ -25,6 +25,33 @@ class MutluAkuRobot(BaseRobot):
     SUPPLIER_CODE = "MUTLU"
     PORTAL_URL = settings.mutlu_aku.portal_url
 
+    # Customer name mapping: keyword from order customer_name → portal branch name
+    CUSTOMER_MAP = {
+        "DALAY": "CASTROL BATMAN DALAY PETROL",
+        "BİLMAKSAN": "CASTROL TRAKYA BİLMAKSAN",
+        "HNR": "CASTROL DİYARBAKIR HNR",
+        "ALGÜNLER": "CASTROL MARDİN ALGÜNLER",
+        "BİLGE": "CASTROL ÇORUM BİLGE OTOMOTİV",
+        "YILMAZ PETROL": "CASTROL KONYA YILMAZ PETROL",
+        "MAY AKARYAKIT": "CASTROL MERSİN MAY AKARYAKIT",
+        "AKILLAR": "CASTROL ANTALYA AKILLAR",
+        "İDUĞ": "CASTROL İZMİR İDUĞ",
+        "VİS ENERJİ": "CASTROL İSTANBUL VİS ENERJİ",
+        "YD DENİZ": "CASTROL ANKARA YD DENİZ",
+        "YAĞPET": "CASTROL BURSA YAĞPET",
+        "ÖMÜR": "CASTROL DENİZLİ ÖMÜR",
+        "POLAT GIDA": "CASTROL ELAZIĞ POLAT GIDA",
+        "CİNDİLLİ": "CASTROL ERZURUM CİNDİLLİ",
+        "ELBEYLİ": "CASTROL GAZİANTEP ELBEYLİ PETROL",
+        "ÖZTOPRAK": "CASTROL HATAY VEDİ ÖZTOPRAK",
+        "KARABULUT": "CASTROL KAYSERİ KARABULUT",
+        "ŞİRİNAT": "CASTROL SAKARYA ŞİRİNAT",
+        "TUNALAR": "CASTROL SAMSUN TUNALAR",
+        "SEFER": "CASTROL TRABZON SEFER TİC.",
+        "TEKİN": "CASTROL VAN TEKİN TİC.",
+        "ÖCALLAR": "CASTROL ZONGULDAK ÖCALLAR",
+    }
+
     # Selectors
     SELECTORS = {
         # Login
@@ -32,9 +59,9 @@ class MutluAkuRobot(BaseRobot):
         "password_input": "input[name='Password'], input[id='Password'], input[type='password']",
         "login_button": "button[type='submit'], input[type='submit'], .login-btn",
 
-        # Customer selection (sağ üst köşe)
-        "customer_dropdown": ".customer-select, [class*='customer'], .header-customer",
-        "customer_option": "text={customer_name}",
+        # Customer selection (sağ üst köşe - VisionNext PRM dropdown)
+        "customer_dropdown": "button#dLabel2, .leftNav button[data-toggle='dropdown']:nth-of-type(2)",
+        "customer_option": "a[href*='ChangeActiveBranch']:has-text('{customer_name}')",
 
         # Menu navigation
         "menu_satis_satinalma": "text=Satış / Satın Alma, text=Satış/Satın Alma",
@@ -104,22 +131,57 @@ class MutluAkuRobot(BaseRobot):
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Login successful")
 
+    def _resolve_customer_name(self) -> str:
+        """Resolve order customer_name to portal branch name using CUSTOMER_MAP"""
+        # customer_name is set as _excel_customer_name by OrderWorker._create_order_object
+        order_customer = getattr(self.order, '_excel_customer_name', '') or getattr(self.order, 'customer_name', '') or ""
+        order_customer_upper = order_customer.upper()
+
+        for keyword, portal_name in self.CUSTOMER_MAP.items():
+            if keyword.upper() in order_customer_upper:
+                robot_logger.info(
+                    f"[{self.SUPPLIER_NAME}] Customer mapped: '{order_customer}' → '{portal_name}' (keyword: {keyword})"
+                )
+                return portal_name
+
+        # Fallback: default customer
+        default = "CASTROL BATMAN DALAY PETROL"
+        robot_logger.warning(
+            f"[{self.SUPPLIER_NAME}] No customer mapping found for '{order_customer}', using default: {default}"
+        )
+        return default
+
     async def select_customer(self, customer_name: str) -> None:
-        """Müşteri seç (sağ üst dropdown)"""
+        """Müşteri seç (sağ üst dropdown - VisionNext PRM ChangeActiveBranch)"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Selecting customer: {customer_name}")
 
-        # Click customer dropdown
-        await self.click_element(self.SELECTORS["customer_dropdown"])
+        # Wait for page to fully load after login
+        await self.page.wait_for_load_state("networkidle")
+        await self.page.wait_for_timeout(2000)
 
-        # Wait for dropdown to open
-        await self.page.wait_for_timeout(500)
+        # Click customer dropdown button (#dLabel2)
+        dropdown_btn = await self.page.wait_for_selector(
+            self.SELECTORS["customer_dropdown"], timeout=15000
+        )
+        await dropdown_btn.click()
 
-        # Select customer
+        # Wait for dropdown menu to appear
+        await self.page.wait_for_timeout(1000)
+
+        # Find and click the customer option
         selector = self.SELECTORS["customer_option"].format(customer_name=customer_name)
-        await self.click_element(selector)
+        customer_link = await self.page.wait_for_selector(selector, timeout=10000)
 
-        # Wait for page update
-        await self.wait_for_navigation()
+        if customer_link:
+            # Scroll into view if needed (long customer list)
+            await customer_link.scroll_into_view_if_needed()
+            await customer_link.click()
+        else:
+            raise Exception(f"Customer not found: {customer_name}")
+
+        # Wait for page reload after branch change
+        await self.page.wait_for_load_state("networkidle")
+        await self.page.wait_for_timeout(2000)
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer selected: {customer_name}")
 
@@ -354,8 +416,9 @@ class MutluAkuRobot(BaseRobot):
                 wait_seconds=settings.retry.login_wait_seconds
             )
 
-            # Step 2: Customer selection
-            customer_name = "CASTROL BATMAN DALAY PETROL"  # TODO: Get from order/mapping
+            # Step 2: Customer selection - match order customer to portal branch
+            customer_name = self._resolve_customer_name()
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Resolved customer: {customer_name}")
             await self.execute_step(
                 RobotStep.CUSTOMER_SELECT,
                 lambda: self.select_customer(customer_name),

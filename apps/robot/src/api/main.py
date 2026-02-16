@@ -795,7 +795,7 @@ async def process_order(
         order_info = {
             "id": order["id"],
             "order_code": order["order_code"],
-            "supplier_type": "MUTLU" if order["supplier_type"] == "mutlu_aku" else "MANN",
+            "supplier_type": order["supplier_type"] if order["supplier_type"] in ("MUTLU", "MANN") else "MANN",
             "caspar_order_no": order.get("order_code"),
             "customer_code": excel_customer_code,
             "customer_name": excel_customer_name,
