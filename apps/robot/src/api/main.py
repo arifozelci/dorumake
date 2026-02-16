@@ -665,6 +665,11 @@ async def _run_order_robot(order_id: str, order_info: dict):
     from src.workers.order_worker import OrderWorker
 
     order_worker = OrderWorker()
+    order_code = order_info.get("order_code", "N/A")
+    supplier_type = order_info.get("supplier_type", "")
+    supplier_name = "Mann & Hummel" if supplier_type == "MANN" else "Mutlu Akü" if supplier_type == "MUTLU" else supplier_type
+    customer_name = order_info.get("customer_name", "")
+    item_count = len(order_info.get("items", []))
 
     try:
         # Run robot
@@ -685,6 +690,18 @@ async def _run_order_robot(order_id: str, order_info: dict):
                 status="SUCCESS",
                 message=f"Siparis basariyla tamamlandi: {result.portal_order_no or 'N/A'}"
             )
+
+            # Send completion notification email
+            _send_order_notification(
+                order_code=order_code,
+                supplier_name=supplier_name,
+                customer_name=customer_name,
+                item_count=item_count,
+                success=True,
+                portal_order_no=result.portal_order_no,
+                duration_seconds=result.duration_seconds,
+                order_id=order_id,
+            )
         else:
             sqlserver_db.update_order_status(
                 order_id,
@@ -698,6 +715,17 @@ async def _run_order_robot(order_id: str, order_info: dict):
                 action="error",
                 status="ERROR",
                 message=f"Siparis isleme hatasi: {result.message}"
+            )
+
+            # Send error notification email
+            _send_order_notification(
+                order_code=order_code,
+                supplier_name=supplier_name,
+                customer_name=customer_name,
+                item_count=item_count,
+                success=False,
+                error_message=result.message,
+                order_id=order_id,
             )
 
     except Exception as e:
@@ -715,6 +743,67 @@ async def _run_order_robot(order_id: str, order_info: dict):
             status="ERROR",
             message=f"Robot hatasi: {str(e)}"
         )
+
+        # Send error notification email
+        _send_order_notification(
+            order_code=order_code,
+            supplier_name=supplier_name,
+            customer_name=customer_name,
+            item_count=item_count,
+            success=False,
+            error_message=str(e),
+            order_id=order_id,
+        )
+
+
+def _send_order_notification(
+    order_code: str,
+    supplier_name: str,
+    customer_name: str,
+    item_count: int,
+    success: bool,
+    portal_order_no: str = None,
+    duration_seconds: float = None,
+    error_message: str = None,
+    order_id: str = None,
+):
+    """Send order completion/error notification email to all configured recipients"""
+    try:
+        from src.notifications.email_sender import EmailSender
+
+        sender = EmailSender()
+        order_url = f"https://kolayrobot.com/dashboard/orders/{order_id}" if order_id else "https://kolayrobot.com/dashboard/orders"
+
+        if success:
+            subject = f"Sipariş Tamamlandı: {order_code} - {supplier_name}"
+            body = (
+                f"Sipariş başarıyla işlendi:\n\n"
+                f"Sipariş Kodu: {order_code}\n"
+                f"Tedarikçi: {supplier_name}\n"
+                f"Müşteri: {customer_name}\n"
+                f"Ürün Sayısı: {item_count}\n"
+                f"Portal Sipariş No: {portal_order_no or 'N/A'}\n"
+                f"Süre: {duration_seconds:.0f} saniye\n\n" if duration_seconds else ""
+                f"Sipariş Detay: {order_url}\n"
+            )
+        else:
+            subject = f"Sipariş HATA: {order_code} - {supplier_name}"
+            body = (
+                f"Sipariş işlenirken hata oluştu:\n\n"
+                f"Sipariş Kodu: {order_code}\n"
+                f"Tedarikçi: {supplier_name}\n"
+                f"Müşteri: {customer_name}\n"
+                f"Hata: {error_message}\n\n"
+                f"Sipariş Detay: {order_url}\n"
+            )
+
+        recipients = settings.notification.recipients if hasattr(settings, 'notification') and hasattr(settings.notification, 'recipients') else []
+        for recipient in recipients:
+            sender.send_email(recipient, subject, body)
+
+        logger.info(f"Order notification sent for {order_code}: {'success' if success else 'error'}")
+    except Exception as e:
+        logger.error(f"Failed to send order notification for {order_code}: {e}")
 
 
 @app.post("/api/orders/{order_id}/process", response_model=ProcessOrderResponse)
