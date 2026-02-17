@@ -692,16 +692,19 @@ async def _run_order_robot(order_id: str, order_info: dict):
             )
 
             # Send completion notification email
-            _send_order_notification(
-                order_code=order_code,
-                supplier_name=supplier_name,
-                customer_name=customer_name,
-                item_count=item_count,
-                success=True,
-                portal_order_no=result.portal_order_no,
-                duration_seconds=result.duration_seconds,
-                order_id=order_id,
-            )
+            try:
+                _send_order_notification(
+                    order_code=order_code,
+                    supplier_name=supplier_name,
+                    customer_name=customer_name,
+                    item_count=item_count,
+                    success=True,
+                    portal_order_no=result.portal_order_no,
+                    duration_seconds=result.duration_seconds,
+                    order_id=order_id,
+                )
+            except Exception as notify_err:
+                print(f"[NOTIFICATION] Error sending notification: {notify_err}")
         else:
             sqlserver_db.update_order_status(
                 order_id,
@@ -718,15 +721,18 @@ async def _run_order_robot(order_id: str, order_info: dict):
             )
 
             # Send error notification email
-            _send_order_notification(
-                order_code=order_code,
-                supplier_name=supplier_name,
-                customer_name=customer_name,
-                item_count=item_count,
-                success=False,
-                error_message=result.message,
-                order_id=order_id,
-            )
+            try:
+                _send_order_notification(
+                    order_code=order_code,
+                    supplier_name=supplier_name,
+                    customer_name=customer_name,
+                    item_count=item_count,
+                    success=False,
+                    error_message=result.message,
+                    order_id=order_id,
+                )
+            except Exception as notify_err:
+                print(f"[NOTIFICATION] Error sending notification: {notify_err}")
 
     except Exception as e:
         # Update order as failed in SQL Server
@@ -745,15 +751,18 @@ async def _run_order_robot(order_id: str, order_info: dict):
         )
 
         # Send error notification email
-        _send_order_notification(
-            order_code=order_code,
-            supplier_name=supplier_name,
-            customer_name=customer_name,
-            item_count=item_count,
-            success=False,
-            error_message=str(e),
-            order_id=order_id,
-        )
+        try:
+            _send_order_notification(
+                order_code=order_code,
+                supplier_name=supplier_name,
+                customer_name=customer_name,
+                item_count=item_count,
+                success=False,
+                error_message=str(e),
+                order_id=order_id,
+            )
+        except Exception as notify_err:
+            print(f"[NOTIFICATION] Error sending notification: {notify_err}")
 
 
 def _send_order_notification(
@@ -801,9 +810,9 @@ def _send_order_notification(
         for recipient in recipients:
             sender.send_email(recipient, subject, body)
 
-        logger.info(f"Order notification sent for {order_code}: {'success' if success else 'error'}")
+        print(f"[NOTIFICATION] Order notification sent for {order_code}: {'success' if success else 'error'}")
     except Exception as e:
-        logger.error(f"Failed to send order notification for {order_code}: {e}")
+        print(f"[NOTIFICATION] Failed to send order notification for {order_code}: {e}")
 
 
 @app.post("/api/orders/{order_id}/process", response_model=ProcessOrderResponse)
@@ -1788,6 +1797,111 @@ async def send_system_alert_notification(
     if not result["success"] and "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+# ==================== REPORTS ====================
+
+@app.get("/api/reports/teccom")
+async def get_teccom_report(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    search: str = Query(None),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get TecCom (Mann & Hummel) order report"""
+    with sqlserver_db.get_cursor() as cursor:
+        where = "WHERE o.supplier_type = 'MANN'"
+        params = []
+
+        if search:
+            where += " AND (o.order_code LIKE ? OR o.customer_name LIKE ? OR o.customer_code LIKE ? OR o.portal_order_number LIKE ?)"
+            s = f"%{search}%"
+            params.extend([s, s, s, s])
+
+        # Count
+        cursor.execute(f"SELECT COUNT(*) FROM orders o {where}", params)
+        total = cursor.fetchone()[0]
+
+        # Data
+        offset = (page - 1) * page_size
+        cursor.execute(f"""
+            SELECT o.customer_code, o.customer_name, o.created_at, o.order_code,
+                   o.total_items, o.portal_order_number, o.processed_at, o.status, o.id
+            FROM orders o
+            {where}
+            ORDER BY o.created_at DESC
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """, params + [offset, page_size])
+
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        orders = []
+        for row in rows:
+            d = dict(zip(columns, row))
+            for k, v in d.items():
+                if isinstance(v, datetime):
+                    d[k] = v.isoformat()
+            orders.append(d)
+
+        return {
+            "orders": orders,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+
+
+@app.get("/api/reports/teccom/download")
+async def download_teccom_report(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Download TecCom order report as Excel"""
+    import io
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl not installed")
+
+    from fastapi.responses import StreamingResponse
+
+    with sqlserver_db.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT customer_code AS [Müşteri Kodu],
+                   customer_name AS [Müşteri Adı],
+                   created_at AS [Sipariş Tarihi],
+                   order_code AS [Sipariş Kodu],
+                   total_items AS [Ürün Sayısı],
+                   portal_order_number AS [TECCOM SİPARİŞ NO],
+                   processed_at AS [Teccom Kayıt Tarihi],
+                   status AS [Durum]
+            FROM orders
+            WHERE supplier_type = 'MANN'
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "TecCom Siparişler"
+    ws.append(columns)
+    for row in rows:
+        ws.append([v.strftime("%Y-%m-%d %H:%M") if isinstance(v, datetime) else v for v in row])
+
+    # Auto-width
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=TecCom_Siparis_Listesi.xlsx"}
+    )
 
 
 # Startup/shutdown events

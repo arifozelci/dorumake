@@ -5,6 +5,7 @@ TecCom Portal automation for Mann & Hummel orders via CSV upload
 
 import csv
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from playwright.async_api import TimeoutError as PlaywrightTimeout
@@ -14,6 +15,20 @@ from src.utils.logger import robot_logger
 from src.db.models import Order, OrderItem
 
 from .base import BaseRobot, RobotStep, RobotError, RobotResult
+
+
+def _normalize_turkish(text: str) -> str:
+    """Normalize Turkish characters to ASCII for matching.
+
+    TecCom portal stores customer names in ASCII (e.g. VEDI OZTOPRAK)
+    but Excel uses Turkish chars (e.g. VEDİ ÖZTOPRAK). This function
+    normalizes both to a common form for reliable comparison.
+    """
+    tr_map = str.maketrans(
+        "çÇğĞıİöÖşŞüÜ",
+        "cCgGiIoOsSuU",
+    )
+    return text.translate(tr_map).upper()
 
 
 class MannHummelRobot(BaseRobot):
@@ -677,14 +692,15 @@ class MannHummelRobot(BaseRobot):
                 """)
                 robot_logger.info(f"[{self.SUPPLIER_NAME}] Dropdown has {len(options)} options")
 
-                # Find matching option by customer name
+                # Find matching option by customer name (Turkish-normalized)
                 matched_option = None
                 for term in search_terms:
-                    term_upper = term.upper()
+                    term_norm = _normalize_turkish(term)
                     for opt in options:
-                        if term_upper in opt['text'].upper():
+                        opt_norm = _normalize_turkish(opt['text'])
+                        if term_norm in opt_norm:
                             matched_option = opt
-                            robot_logger.info(f"[{self.SUPPLIER_NAME}] Matched customer: '{opt['text']}' with term '{term}'")
+                            robot_logger.info(f"[{self.SUPPLIER_NAME}] Matched customer: '{opt['text']}' with term '{term}' (normalized: '{term_norm}' in '{opt_norm}')")
                             break
                     if matched_option:
                         break
@@ -704,14 +720,29 @@ class MannHummelRobot(BaseRobot):
                 continue
 
         if not selected:
-            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not select customer, trying text click...")
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not select customer from dropdown, trying text click with normalized terms...")
             for term in search_terms:
                 try:
-                    await self.page.click(f"text={term}")
+                    # Try normalized version for text click
+                    norm_term = _normalize_turkish(term)
+                    await self.page.click(f"text={norm_term}", timeout=3000)
                     selected = True
+                    robot_logger.info(f"[{self.SUPPLIER_NAME}] Selected customer via text click: {norm_term}")
                     break
                 except:
-                    continue
+                    try:
+                        await self.page.click(f"text={term}", timeout=3000)
+                        selected = True
+                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Selected customer via text click: {term}")
+                        break
+                    except:
+                        continue
+
+        if not selected:
+            raise RobotError(
+                message=f"Could not select customer: {customer_name} (search terms: {search_terms})",
+                step=RobotStep.CUSTOMER_SELECT
+            )
 
         await self.page.wait_for_timeout(1000)
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Customer selection completed (selected={selected})")

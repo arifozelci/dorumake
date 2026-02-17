@@ -16,6 +16,7 @@ import {
   Activity,
   ChevronRight,
   Bell,
+  BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { authService } from '@/lib/auth';
@@ -33,6 +34,7 @@ const mainNavItems: NavItem[] = [
   { key: 'nav.orders', href: '/dashboard/orders', icon: ShoppingCart },
   { key: 'nav.emails', href: '/dashboard/emails', icon: Mail },
   { key: 'nav.logs', href: '/dashboard/logs', icon: FileText },
+  { key: 'nav.reports', href: '/dashboard/reports', icon: BarChart3 },
 ];
 
 const managementNavItems: NavItem[] = [

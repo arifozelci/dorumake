@@ -121,6 +121,18 @@ export function useSchedulerJobs() {
   });
 }
 
+// Reports
+export function useTeccomReport(params?: {
+  page?: number;
+  page_size?: number;
+  search?: string;
+}) {
+  return useQuery({
+    queryKey: ['teccom-report', params],
+    queryFn: () => apiService.getTeccomReport(params),
+  });
+}
+
 // Manual Order
 export function useCreateManualOrder() {
   const queryClient = useQueryClient();

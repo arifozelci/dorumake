@@ -235,6 +235,16 @@ export const apiService = {
     return data;
   },
 
+  // Reports
+  async getTeccomReport(params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+  }): Promise<{ orders: any[]; total: number; page: number; page_size: number }> {
+    const { data } = await api.get('/api/reports/teccom', { params });
+    return data;
+  },
+
   // Manual Order
   async createManualOrder(order: {
     supplier_type: string;
