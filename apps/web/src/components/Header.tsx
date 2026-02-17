@@ -5,19 +5,13 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { useRecentNotifications } from '@/hooks/useApi';
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
 }
-
-// Sample notifications - will be replaced with real data
-const sampleNotifications = [
-  { id: 1, type: 'success', title: 'Sipariş tamamlandı', message: 'ORD-2024-001 başarıyla işlendi', time: '5 dk önce' },
-  { id: 2, type: 'warning', title: 'Kuyruk uyarısı', message: 'Mutlu Akü kuyruğunda 3 sipariş bekliyor', time: '15 dk önce' },
-  { id: 3, type: 'info', title: 'Yeni e-posta', message: 'Caspar\'dan yeni sipariş e-postası alındı', time: '1 saat önce' },
-];
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
   const [refreshing, setRefreshing] = useState(false);
@@ -27,6 +21,8 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { data: notifData } = useRecentNotifications();
+  const notifications = notifData?.notifications ?? [];
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -61,7 +57,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-xl border-b border-gray-100">
+    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-gray-100">
       <div className="flex items-center justify-between px-6 py-4">
         {/* Title Section */}
         <div>
@@ -104,12 +100,14 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
               title="Bildirimler"
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-danger-500 rounded-full ring-2 ring-white" />
+              {notifications.length > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-danger-500 rounded-full ring-2 ring-white" />
+              )}
             </button>
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-[100]">
                 <div className="flex items-center justify-between p-4 border-b border-gray-100">
                   <h3 className="font-semibold text-gray-900">Bildirimler</h3>
                   <button
@@ -120,8 +118,8 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                   </button>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
-                  {sampleNotifications.length > 0 ? (
-                    sampleNotifications.map((notification) => (
+                  {notifications.length > 0 ? (
+                    notifications.map((notification) => (
                       <div
                         key={notification.id}
                         className="p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
@@ -148,7 +146,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                   <button
                     onClick={() => {
                       setShowNotifications(false);
-                      router.push('/notifications');
+                      router.push('/dashboard/notifications');
                     }}
                     className="w-full text-sm text-primary-600 hover:text-primary-700 font-medium"
                   >
@@ -191,7 +189,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
 
             {/* User Dropdown */}
             {showUserMenu && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-[100]">
                 <div className="p-4 border-b border-gray-100">
                   <p className="text-sm font-semibold text-gray-900">{user?.username || 'Admin'}</p>
                   <p className="text-xs text-gray-500">{user?.email || 'admin@dorufinansal.com'}</p>
@@ -200,7 +198,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
-                      router.push('/settings');
+                      router.push('/dashboard/settings');
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                   >
@@ -210,7 +208,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
-                      router.push('/users');
+                      router.push('/dashboard/users');
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                   >

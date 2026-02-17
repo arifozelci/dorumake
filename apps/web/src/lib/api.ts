@@ -235,6 +235,12 @@ export const apiService = {
     return data;
   },
 
+  // Notifications
+  async getRecentNotifications(): Promise<{ notifications: Array<{ id: number; type: string; title: string; message: string; time: string }> }> {
+    const { data } = await api.get('/api/notifications/recent');
+    return data;
+  },
+
   // Reports
   async getTeccomReport(params?: {
     page?: number;

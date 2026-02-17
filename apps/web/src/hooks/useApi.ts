@@ -121,6 +121,15 @@ export function useSchedulerJobs() {
   });
 }
 
+// Notifications
+export function useRecentNotifications() {
+  return useQuery({
+    queryKey: ['recent-notifications'],
+    queryFn: apiService.getRecentNotifications,
+    refetchInterval: 30000,
+  });
+}
+
 // Reports
 export function useTeccomReport(params?: {
   page?: number;

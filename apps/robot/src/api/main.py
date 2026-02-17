@@ -1739,6 +1739,87 @@ def _send_notification_to_all_users(template_name: str, params: dict) -> dict:
     }
 
 
+@app.get("/api/notifications/recent")
+async def get_recent_notifications(
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get recent notifications from order activity"""
+    notifications = []
+    now = datetime.now()
+
+    with sqlserver_db.get_cursor() as cursor:
+        # Recent completed orders
+        cursor.execute("""
+            SELECT TOP (?) order_code, customer_name, portal_order_number, processed_at
+            FROM orders WHERE status = 'COMPLETED' AND processed_at IS NOT NULL
+            ORDER BY processed_at DESC
+        """, (limit,))
+        for row in cursor.fetchall():
+            t = row[3]
+            diff = now - t if t else None
+            if diff and diff.total_seconds() < 86400:
+                mins = int(diff.total_seconds() / 60)
+                time_str = f"{mins} dk önce" if mins < 60 else f"{int(mins/60)} saat önce"
+            else:
+                time_str = t.strftime("%d.%m %H:%M") if t else ""
+            notifications.append({
+                "id": hash(row[0]) & 0xFFFFFF,
+                "type": "success",
+                "title": "Sipariş tamamlandı",
+                "message": f"{row[0]} - {(row[1] or '')[:30]} - Portal: {row[2] or 'N/A'}",
+                "time": time_str,
+            })
+
+        # Recent failed orders
+        cursor.execute("""
+            SELECT TOP (?) order_code, customer_name, error_message, created_at
+            FROM orders WHERE status = 'FAILED'
+            ORDER BY created_at DESC
+        """, (limit,))
+        for row in cursor.fetchall():
+            t = row[3]
+            diff = now - t if t else None
+            if diff and diff.total_seconds() < 86400:
+                mins = int(diff.total_seconds() / 60)
+                time_str = f"{mins} dk önce" if mins < 60 else f"{int(mins/60)} saat önce"
+            else:
+                time_str = t.strftime("%d.%m %H:%M") if t else ""
+            notifications.append({
+                "id": hash(row[0] + "err") & 0xFFFFFF,
+                "type": "warning",
+                "title": "Sipariş hatası",
+                "message": f"{row[0]} - {(row[2] or 'Bilinmeyen hata')[:50]}",
+                "time": time_str,
+            })
+
+        # Recent emails
+        cursor.execute("""
+            SELECT TOP (?) subject, from_address, received_at
+            FROM emails WHERE has_attachments = 1
+            ORDER BY received_at DESC
+        """, (limit,))
+        for row in cursor.fetchall():
+            t = row[2]
+            diff = now - t if t else None
+            if diff and diff.total_seconds() < 86400:
+                mins = int(diff.total_seconds() / 60)
+                time_str = f"{mins} dk önce" if mins < 60 else f"{int(mins/60)} saat önce"
+            else:
+                time_str = t.strftime("%d.%m %H:%M") if t else ""
+            notifications.append({
+                "id": hash(row[0]) & 0xFFFFFF,
+                "type": "info",
+                "title": "Yeni sipariş e-postası",
+                "message": f"{(row[0] or '')[:50]}",
+                "time": time_str,
+            })
+
+    # Sort by most recent (approximate via time string)
+    notifications.sort(key=lambda x: x["time"], reverse=False)
+    return {"notifications": notifications[:limit]}
+
+
 @app.post("/api/notifications/send")
 async def send_notification(
     request: NotificationRequest,
