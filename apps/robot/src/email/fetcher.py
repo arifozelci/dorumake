@@ -7,7 +7,7 @@ import asyncio
 import email
 from email.header import decode_header
 from email.message import Message
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 import uuid
@@ -249,10 +249,12 @@ class EmailFetcher:
             # Select folder
             self.client.select_folder(folder)
 
-            # Search for recent emails (today) instead of UNSEEN
+            # Search for recent emails (last 7 days) instead of UNSEEN
             # This handles Gmail marking emails as read when opened in browser
-            today = datetime.now().strftime('%d-%b-%Y')
-            messages = self.client.search(['SINCE', today])
+            # Using 7-day window to catch emails that arrived on weekends/holidays
+            # Deduplication is handled by known_message_ids so no double processing
+            since_date = (datetime.now() - timedelta(days=7)).strftime('%d-%b-%Y')
+            messages = self.client.search(['SINCE', since_date])
 
             if not messages:
                 email_logger.debug("No recent emails found")

@@ -102,6 +102,28 @@ class MutluAkuRobot(BaseRobot):
         self.order_items = order_items or []
         self.portal_order_no: Optional[str] = None
 
+    async def _js_click(self, pattern: str, tags: str = "a, button, span, input[type='submit']") -> bool:
+        """Click element by regex text pattern using JS (bypasses Playwright text= issues in VisionNext PRM)"""
+        result = await self.page.evaluate(
+            """([pattern, tags]) => {
+                const els = document.querySelectorAll(tags);
+                const regex = new RegExp(pattern, 'i');
+                for (const el of els) {
+                    const text = (el.textContent || '').trim();
+                    if (regex.test(text)) {
+                        el.click();
+                        return { clicked: true, text: text };
+                    }
+                }
+                return { clicked: false };
+            }""",
+            [pattern, tags]
+        )
+        if result.get('clicked'):
+            robot_logger.debug(f"[{self.SUPPLIER_NAME}] JS click matched: '{result.get('text')}' (pattern: {pattern})")
+            return True
+        return False
+
     async def login(self) -> None:
         """Portal'a giriş yap"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Logging in...")
@@ -189,15 +211,24 @@ class MutluAkuRobot(BaseRobot):
         """Sipariş ekranına git"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Navigating to order screen...")
 
-        # Click "Satış / Satın Alma" menu
-        await self.click_element(self.SELECTORS["menu_satis_satinalma"])
-        await self.page.wait_for_timeout(500)
+        # Click "Satış / Satın Alma" menu using JS (Playwright text= selectors fail in VisionNext)
+        if not await self._js_click(r"Sat[ıi][şs].*Sat[ıi]n.*Alma"):
+            raise Exception("Could not find 'Satış / Satın Alma' menu")
 
-        # Click "Satın Alma Siparişi"
-        await self.click_element(self.SELECTORS["menu_satinalma_siparisi"])
+        await self.page.wait_for_timeout(1500)
+
+        # Click "Satın Alma Siparişi" submenu
+        for attempt in range(3):
+            if await self._js_click(r"Sat[ıi]n.*Alma.*Sipari[şs]"):
+                break
+            if attempt < 2:
+                await self.page.wait_for_timeout(1000)
+        else:
+            raise Exception("Could not find 'Satın Alma Siparişi' submenu")
 
         # Wait for page load
         await self.wait_for_navigation()
+        await self.page.wait_for_timeout(2000)
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Order screen loaded")
 
@@ -205,11 +236,17 @@ class MutluAkuRobot(BaseRobot):
         """Yeni sipariş oluştur"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Creating new order...")
 
-        # Click "Oluştur" button
-        await self.click_element(self.SELECTORS["create_button"])
+        # Wait for page to be fully ready
+        await self.page.wait_for_load_state("networkidle")
+        await self.page.wait_for_timeout(2000)
+
+        # Click "Oluştur" button - use ^Olu to avoid matching "KISAYOL OLUŞTUR"
+        if not await self._js_click(r"^Olu[şs]tur"):
+            raise Exception("Could not find 'Oluştur' button")
 
         # Wait for form to load
         await self.wait_for_navigation()
+        await self.page.wait_for_timeout(1000)
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] New order form opened")
 
@@ -217,61 +254,174 @@ class MutluAkuRobot(BaseRobot):
         """
         Sipariş formunu doldur
 
-        Args:
-            caspar_order_no: Caspar sipariş numarası (açıklama alanına yazılacak)
+        VisionNext PRM pre-fills most fields (Depo, Müşteri, Fiyat Listesi, Ödeme Tipi).
+        We need to fill: Ödeme Vadesi (required), Açıklama/Müşteri Sipariş No.
         """
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Filling order form...")
 
-        # Depo seçimi
-        try:
-            await self.select_option(
-                self.SELECTORS["depo_select"],
-                label=settings.mutlu_aku.default_depo
-            )
-        except Exception as e:
-            robot_logger.warning(f"Depo selection failed (may be pre-filled): {e}")
+        # Wait for form to fully render
+        await self.page.wait_for_timeout(2000)
 
-        # Personel seçimi
-        try:
-            await self.select_option(
-                self.SELECTORS["personel_select"],
-                label=settings.mutlu_aku.default_personel
-            )
-        except Exception as e:
-            robot_logger.warning(f"Personel selection failed (may be pre-filled): {e}")
+        # 1. Fill Ödeme Vadesi (required field) - it's a select/dropdown
+        odeme_filled = await self.page.evaluate("""() => {
+            // Find all select elements and check labels
+            const selects = document.querySelectorAll('select');
+            for (const sel of selects) {
+                // Check if this select has "Seçiniz" as default and is near "Ödeme Vadesi" label
+                const parent = sel.closest('.form-group, .col-md-6, .col-md-4, .col-sm-6, div');
+                if (parent) {
+                    const labelText = parent.textContent || '';
+                    if (/[ÖO]deme.*Vade/i.test(labelText)) {
+                        // Find the option with "60" in it
+                        for (const opt of sel.options) {
+                            if (opt.text.includes('60') || opt.value.includes('60')) {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                                return 'select_60_gun';
+                            }
+                        }
+                        // If no "60" option, select the first non-empty option
+                        for (const opt of sel.options) {
+                            if (opt.value && opt.text !== 'Seçiniz') {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                                return 'select_first: ' + opt.text;
+                            }
+                        }
+                    }
+                }
+            }
 
-        # Ödeme tipi
-        try:
-            await self.select_option(
-                self.SELECTORS["odeme_tipi_select"],
-                label=settings.mutlu_aku.default_odeme_tipi
-            )
-        except Exception as e:
-            robot_logger.warning(f"Odeme tipi selection failed (may be pre-filled): {e}")
+            // Try select2 style dropdowns
+            const spans = document.querySelectorAll('span, div, label');
+            for (const span of spans) {
+                const text = (span.textContent || '').trim();
+                if (/[ÖO]deme.*Vade/i.test(text) && text.length < 30) {
+                    const container = span.closest('.form-group, .col-md-6, .col-md-4, div');
+                    if (container) {
+                        const select = container.querySelector('select');
+                        if (select) {
+                            for (const opt of select.options) {
+                                if (opt.text.includes('60') || opt.value.includes('60')) {
+                                    select.value = opt.value;
+                                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                                    return 'select2_60_gun';
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }""")
 
-        # Ödeme vadesi
-        try:
-            await self.select_option(
-                self.SELECTORS["odeme_vadesi_select"],
-                label=settings.mutlu_aku.default_odeme_vadesi
-            )
-        except Exception as e:
-            robot_logger.warning(f"Odeme vadesi selection failed (may be pre-filled): {e}")
+        if odeme_filled:
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Ödeme Vadesi filled: {odeme_filled}")
+        else:
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not fill Ödeme Vadesi")
 
-        # Açıklama (Caspar sipariş numarası)
-        await self.fill_input(self.SELECTORS["aciklama_input"], caspar_order_no)
+        # 2. Fill "Müşteri Sipariş Numarası" and/or "Açıklama" with Caspar order no
+        filled = await self.page.evaluate(
+            """([orderNo]) => {
+                const results = [];
+
+                // Fill "Müşteri Sipariş Numarası" input
+                const labels = document.querySelectorAll('label, span, div');
+                for (const label of labels) {
+                    const text = (label.textContent || '').trim();
+                    if (/M[üu][şs]teri.*Sipari[şs].*Numaras/i.test(text) && text.length < 40) {
+                        const parent = label.closest('.form-group, .col-md-6, .col-md-4, div');
+                        if (parent) {
+                            const input = parent.querySelector('input:not([type="hidden"]), textarea');
+                            if (input) {
+                                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                setter.call(input, orderNo);
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                                results.push('musteri_siparis');
+                            }
+                        }
+                    }
+                }
+
+                // Fill "Açıklama" textarea
+                for (const label of labels) {
+                    const text = (label.textContent || '').trim();
+                    if (/^A[çc][ıi]klama$/i.test(text)) {
+                        const parent = label.closest('.form-group, .col-md-12, div');
+                        if (parent) {
+                            const ta = parent.querySelector('textarea');
+                            if (ta) {
+                                ta.value = orderNo;
+                                ta.dispatchEvent(new Event('input', { bubbles: true }));
+                                ta.dispatchEvent(new Event('change', { bubbles: true }));
+                                results.push('aciklama');
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: find any empty visible textarea
+                if (results.length === 0) {
+                    const textareas = document.querySelectorAll('textarea');
+                    for (const ta of textareas) {
+                        if (ta.offsetParent !== null && !ta.value) {
+                            ta.value = orderNo;
+                            ta.dispatchEvent(new Event('input', { bubbles: true }));
+                            ta.dispatchEvent(new Event('change', { bubbles: true }));
+                            results.push('textarea_fallback');
+                            break;
+                        }
+                    }
+                }
+
+                return results.length > 0 ? results.join(', ') : null;
+            }""",
+            [caspar_order_no]
+        )
+
+        if filled:
+            robot_logger.info(f"[{self.SUPPLIER_NAME}] Order number filled via: {filled}")
+        else:
+            robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not fill order number field")
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Order form filled")
 
     async def open_products_tab(self) -> None:
-        """Ürünler sekmesini aç"""
+        """Ürünler sekmesini aç - click 'Ürün' tab in the form"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Opening products tab...")
 
-        # Click "Ürünler" tab
-        await self.click_element(self.SELECTORS["products_tab"])
+        # Click the "Ürün" tab (second tab next to "Sipariş" tab)
+        # Use JS to find the tab by text
+        clicked = await self.page.evaluate("""() => {
+            // Find tab elements
+            const tabs = document.querySelectorAll('a[data-toggle="tab"], li a, .nav-tabs a, .tab-pane, a[role="tab"]');
+            for (const tab of tabs) {
+                const text = (tab.textContent || '').trim();
+                if (/^[ÜU]r[üu]n$/i.test(text)) {
+                    tab.click();
+                    return { clicked: true, text: text };
+                }
+            }
+            // Try broader search
+            const links = document.querySelectorAll('a, span, li');
+            for (const el of links) {
+                const text = (el.textContent || '').trim();
+                if (/^[ÜU]r[üu]n$/i.test(text)) {
+                    el.click();
+                    return { clicked: true, text: text };
+                }
+            }
+            return { clicked: false };
+        }""")
+
+        if not clicked.get('clicked'):
+            # Try clicking the "Ürünler" button (top right, with magnifier icon)
+            if not await self._js_click(r"[ÜU]r[üu]nler"):
+                raise Exception("Could not find 'Ürün' tab or 'Ürünler' button")
 
         # Wait for tab content
-        await self.page.wait_for_timeout(1000)
+        await self.page.wait_for_timeout(2000)
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Products tab opened")
 
@@ -279,12 +429,12 @@ class MutluAkuRobot(BaseRobot):
         """Ürün listesini getir (ARA butonu)"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Searching products...")
 
-        # Click "ARA" button
-        await self.click_element(self.SELECTORS["search_button"])
+        # Click "ARA" button using JS
+        if not await self._js_click(r"^ARA$|^Ara$"):
+            raise Exception("Could not find 'ARA' button")
 
         # Wait for product list to load
-        await self.wait_for_element(self.SELECTORS["product_table"])
-        await self.page.wait_for_timeout(2000)  # Wait for full load
+        await self.page.wait_for_timeout(3000)  # Wait for full load
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Products loaded")
 
@@ -305,18 +455,29 @@ class MutluAkuRobot(BaseRobot):
                 continue
 
             try:
-                # Find product row by code
-                row_selector = f"tr:has-text('{product_code}'), .row:has-text('{product_code}')"
-                row = await self.page.wait_for_selector(row_selector, timeout=5000)
+                # Find product row by code and fill quantity using JS
+                filled = await self.page.evaluate(
+                    """([code, qty]) => {
+                        const rows = document.querySelectorAll('tr, .row');
+                        for (const row of rows) {
+                            if (row.textContent && row.textContent.includes(code)) {
+                                const input = row.querySelector("input[type='number'], input[class*='adet'], input[class*='quantity'], input[type='text']");
+                                if (input) {
+                                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                    nativeInputValueSetter.call(input, qty);
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }""",
+                    [product_code, str(quantity)]
+                )
 
-                if row:
-                    # Find quantity input in this row
-                    qty_input = await row.query_selector("input[type='number'], input[class*='adet']")
-                    if qty_input:
-                        await qty_input.fill(str(quantity))
-                        robot_logger.debug(f"[{self.SUPPLIER_NAME}] Added product {product_code}: {quantity}")
-                    else:
-                        robot_logger.warning(f"[{self.SUPPLIER_NAME}] Quantity input not found for {product_code}")
+                if filled:
+                    robot_logger.debug(f"[{self.SUPPLIER_NAME}] Added product {product_code}: {quantity}")
                 else:
                     robot_logger.warning(f"[{self.SUPPLIER_NAME}] Product row not found: {product_code}")
 
@@ -329,19 +490,28 @@ class MutluAkuRobot(BaseRobot):
         """Ürünleri kaydet"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Saving products...")
 
-        # Click "Kaydet" button
-        await self.click_element(self.SELECTORS["save_products_button"])
+        # Click "Kaydet" button using JS
+        if not await self._js_click(r"Kaydet"):
+            raise Exception("Could not find 'Kaydet' button")
 
-        # Wait for success message
-        try:
-            await self.wait_for_text("Kaydedildi", timeout=10000)
-        except PlaywrightTimeout:
-            # Check for error message
-            error_el = await self.page.query_selector(self.SELECTORS["error_message"])
-            if error_el:
-                error_text = await error_el.text_content()
+        # Wait for save to complete
+        await self.page.wait_for_timeout(3000)
+
+        # Check for success message using JS
+        has_success = await self.page.evaluate("""() => {
+            const body = document.body.textContent || '';
+            return /Kaydedildi|Ba[şs]ar[ıi]l[ıi]/i.test(body);
+        }""")
+
+        if not has_success:
+            # Check for error
+            has_error = await self.page.evaluate("""() => {
+                const el = document.querySelector('.error-message, .alert-danger');
+                return el ? el.textContent.trim() : null;
+            }""")
+            if has_error:
                 raise RobotError(
-                    message=f"Product save failed: {error_text}",
+                    message=f"Product save failed: {has_error}",
                     step=RobotStep.PRODUCTS_SAVE
                 )
 
@@ -360,11 +530,14 @@ class MutluAkuRobot(BaseRobot):
         """Siparişi kaydet"""
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Saving order...")
 
-        # Click "Kaydet" button (top right)
-        await self.click_element(self.SELECTORS["save_order_button"])
+        # Click "Kaydet" button (green button in top right, seen in VisionNext screenshots)
+        if not await self._js_click(r"^Kaydet$"):
+            # Fallback: try broader match
+            if not await self._js_click(r"Kaydet"):
+                raise Exception("Could not find 'Kaydet' button")
 
         # Wait for save
-        await self.page.wait_for_timeout(2000)
+        await self.page.wait_for_timeout(3000)
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Order saved")
 
@@ -377,22 +550,31 @@ class MutluAkuRobot(BaseRobot):
         """
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Confirming order to SAP (CRITICAL STEP)...")
 
-        # Click "Siparişi Onayla" button
-        await self.click_element(self.SELECTORS["confirm_button"])
+        # Click "Siparişi Onayla" button using JS
+        if not await self._js_click(r"Sipari[şs]i Onayla|Onayla"):
+            raise Exception("Could not find 'Siparişi Onayla' button")
 
         # Wait for confirmation
-        await self.page.wait_for_timeout(3000)
+        await self.page.wait_for_timeout(5000)
 
         # Try to get order number from the page
-        # This may vary based on portal response
         try:
-            # Look for order number in page content
-            page_content = await self.page.content()
-            # Parse order number (implementation depends on portal response)
-            # This is a placeholder - actual implementation needs portal testing
-            self.portal_order_no = "PORTAL_ORDER_NO"  # TODO: Extract from page
+            order_no = await self.page.evaluate("""() => {
+                const body = document.body.textContent || '';
+                // Look for order number patterns (digits, usually 10+ chars)
+                const match = body.match(/(\\d{10,})/);
+                return match ? match[1] : null;
+            }""")
+            if order_no:
+                self.portal_order_no = order_no
+            else:
+                # Try to get from URL or page title
+                url = await self.page.evaluate("() => window.location.href")
+                robot_logger.info(f"[{self.SUPPLIER_NAME}] Page URL after confirm: {url}")
+                self.portal_order_no = "CONFIRMED"
         except Exception as e:
             robot_logger.warning(f"[{self.SUPPLIER_NAME}] Could not extract order number: {e}")
+            self.portal_order_no = "CONFIRMED"
 
         robot_logger.info(f"[{self.SUPPLIER_NAME}] Order confirmed to SAP. Portal order: {self.portal_order_no}")
         return self.portal_order_no

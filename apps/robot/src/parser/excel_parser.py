@@ -103,13 +103,13 @@ class ExcelParser:
     COLUMN_MAPPINGS = {
         "Product Code": ["Product Code", "Ürün Kodu", "Parça No"],
         "Product Name": ["Product Name", "Ürün Adı", "Parça Adı"],
-        "Manufacturer Code": ["Product Manufacturer Code", "Üretici Kodu"],
-        "Quantity": ["Order Quantity", "Miktar", "Adet", "Sipariş Adedi"],
+        "Manufacturer Code": ["Product Manufacturer Code", "Üretici Kodu", "Ürün Üretici Kodu"],
+        "Quantity": ["Order Quantity", "Miktar", "Adet", "Sipariş Adedi", "Sipariş Miktarı"],
         "Unit": ["Unit", "Birim"],
-        "Unit Price": ["Price Value", "Birim Fiyat", "Fiyat"],
-        "Currency": ["Currency", "Para Birimi"],
-        "Total Price": ["Total Price Without VAT", "Toplam Tutar", "KDV Hariç Tutar"],
-        "Shipment Date": ["Shipment Date", "Sevk Tarihi", "Teslimat Tarihi"],
+        "Unit Price": ["Price Value", "Birim Fiyat", "Fiyat", "Ürün Fiyatı"],
+        "Currency": ["Currency", "Para Birimi", "Döviz"],
+        "Total Price": ["Total Price Without VAT", "Toplam Tutar", "KDV Hariç Tutar", "Net Tutar"],
+        "Shipment Date": ["Shipment Date", "Sevk Tarihi", "Teslimat Tarihi", "Sevkiyat Tarihi"],
         "Brand": ["Brand", "Marka"],
         "Manufacturer": ["Manufacturer", "Üretici"],
     }
@@ -206,6 +206,7 @@ class ExcelParser:
                     "%d.%m.%Y",
                     "%m/%d/%Y %H:%M:%S %p",
                     "%Y-%m-%d %H:%M:%S",
+                    "%d.%m.%Y %H:%M:%S",
                 ]
                 for fmt in formats:
                     try:
@@ -232,20 +233,21 @@ class ExcelParser:
                 # Look for key-value pairs
                 cell_lower = cell_value.lower()
 
-                if 'code' in cell_lower or 'kod' in cell_lower:
+                if 'code' in cell_lower or 'kod' in cell_lower or 'kodu' in cell_lower:
                     if 'order' in cell_lower or 'sipariş' in cell_lower:
                         metadata['order_code'] = next_value or cell_value
-                    elif 'ship' in cell_lower or 'sevk' in cell_lower:
+                    elif 'ship' in cell_lower or 'sevk' in cell_lower or 'teslimat' in cell_lower:
                         metadata['ship_to_code'] = next_value or cell_value
                     elif 'customer' in cell_lower or 'müşteri' in cell_lower:
                         metadata['customer_code'] = next_value or cell_value
-                    elif cell_lower.strip().rstrip(':').strip() == 'code' and next_value:
-                        # Plain "Code :" without prefix → customer/company code
+                    elif cell_lower.strip().rstrip(':').strip() in ('code', 'kodu') and next_value:
+                        # Plain "Code :" or "Kodu :" without prefix → customer/company code
                         if 'customer_code' not in metadata:
                             metadata['customer_code'] = next_value
 
-                elif 'name' in cell_lower or 'adı' in cell_lower or 'isim' in cell_lower:
-                    # "Name :" or "Company Name :" or "Firma Adı :" - all map to customer_name
+                elif 'name' in cell_lower or 'adı' in cell_lower or 'sim' in cell_lower:
+                    # "Name :" or "Company Name :" or "Firma Adı :" or "İsim :" - all map to customer_name
+                    # Note: Turkish İ.lower() = i̇ (dotted), so we match on 'sim' to handle both 'isim' and 'i̇sim'
                     if next_value and 'customer_name' not in metadata:
                         metadata['customer_name'] = next_value
 

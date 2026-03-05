@@ -897,6 +897,7 @@ async def process_order(
             "caspar_order_no": order.get("order_code"),
             "customer_code": excel_customer_code,
             "customer_name": excel_customer_name,
+            "shipping_address": parsed_order.shipping_address if parsed_order and parsed_order.shipping_address else "",
             "items": order_items,
         }
 
@@ -1796,7 +1797,7 @@ async def get_recent_notifications(
         # Recent emails
         cursor.execute("""
             SELECT TOP (?) subject, from_address, received_at
-            FROM emails WHERE has_attachments = 1
+            FROM emails WHERE has_attachment = 1
             ORDER BY received_at DESC
         """, (limit,))
         for row in cursor.fetchall():

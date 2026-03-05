@@ -220,6 +220,7 @@ class OrderWorker:
         # Pass customer info from Excel parsing (not from DB relationships)
         order._excel_customer_code = order_info.get('customer_code', '')
         order._excel_customer_name = order_info.get('customer_name', '')
+        order._excel_shipping_address = order_info.get('shipping_address', '')
         return order
 
     def _create_order_items(self, items_data: List[Dict]) -> List[OrderItem]:

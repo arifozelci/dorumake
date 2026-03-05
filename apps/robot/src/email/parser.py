@@ -57,6 +57,7 @@ class EmailParser:
         r'caspar',
         r'info@caspar\.com\.tr',
         r'approved\s*purchase\s*order',
+        r'onaylanm[ıi][şs]\s*al[ıi]m\s*sipari[şs]',
     ]
 
     # Excel-based supplier detection (Brand/Manufacturer columns)
@@ -178,12 +179,16 @@ class EmailParser:
             brand_col = None
             manufacturer_col = None
 
+            brand_keywords = ['Brand', 'Marka']
+            manufacturer_keywords = ['Manufacturer', 'Üretici']
+
             for i, row in enumerate(sheet.iter_rows(values_only=True)):
-                if row and any('Brand' in str(cell) for cell in row if cell):
+                if row and any(any(kw in str(cell) for kw in brand_keywords) for cell in row if cell):
                     for j, cell in enumerate(row):
-                        if cell and 'Brand' in str(cell):
+                        cell_str = str(cell) if cell else ''
+                        if any(kw in cell_str for kw in brand_keywords):
                             brand_col = j
-                        if cell and 'Manufacturer' in str(cell):
+                        if any(kw in cell_str for kw in manufacturer_keywords):
                             manufacturer_col = j
                     continue
 

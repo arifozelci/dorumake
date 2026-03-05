@@ -93,10 +93,10 @@ class EmailWorker:
                 # Get known message_ids from DB for dedup
                 known_ids = db.get_known_message_ids()
 
-                # Fetch recent emails (SINCE today, skip known)
+                # Fetch recent emails (SINCE 7 days, skip known)
                 emails = await fetcher.fetch_unread_emails(
                     mark_as_read=False,
-                    limit=10,
+                    limit=50,
                     known_message_ids=known_ids
                 )
 
@@ -144,7 +144,24 @@ class EmailWorker:
             errors = ', '.join(parsed['validation_errors'])
             email_logger.warning(f"Invalid order email: {errors}")
 
-            # TODO: Save to DB as ignored
+            # Save to DB as IGNORED so it won't be re-fetched every poll cycle
+            try:
+                received_at = email_data.get('received_at')
+                if isinstance(received_at, str):
+                    received_at = datetime.fromisoformat(received_at.replace('Z', '+00:00'))
+                db.save_email(
+                    message_id=email_data.get('message_id', ''),
+                    subject=email_data.get('subject', ''),
+                    from_address=email_data.get('from_address', ''),
+                    to_address=email_data.get('to_address', ''),
+                    received_at=received_at or datetime.utcnow(),
+                    supplier_type=parsed.get('supplier_type'),
+                    status='IGNORED',
+                    has_attachment=len(parsed.get('excel_attachments', [])) > 0
+                )
+            except Exception as e:
+                email_logger.error(f"Failed to save ignored email: {e}")
+
             # Mark as read to avoid reprocessing
             await fetcher.mark_as_read(email_data['imap_uid'])
             return

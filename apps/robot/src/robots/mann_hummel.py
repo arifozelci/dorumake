@@ -696,12 +696,36 @@ class MannHummelRobot(BaseRobot):
                 matched_option = None
                 for term in search_terms:
                     term_norm = _normalize_turkish(term)
+                    matching_options = []
                     for opt in options:
                         opt_norm = _normalize_turkish(opt['text'])
                         if term_norm in opt_norm:
-                            matched_option = opt
-                            robot_logger.info(f"[{self.SUPPLIER_NAME}] Matched customer: '{opt['text']}' with term '{term}' (normalized: '{term_norm}' in '{opt_norm}')")
-                            break
+                            matching_options.append(opt)
+
+                    if len(matching_options) == 1:
+                        matched_option = matching_options[0]
+                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Matched customer: '{matched_option['text']}' with term '{term}'")
+                    elif len(matching_options) > 1:
+                        # Multiple matches - disambiguate using shipping address city
+                        shipping_addr = getattr(self.order, '_excel_shipping_address', '') or ''
+                        shipping_norm = _normalize_turkish(shipping_addr)
+                        robot_logger.info(f"[{self.SUPPLIER_NAME}] Multiple matches ({len(matching_options)}) for '{term}', using address to disambiguate: {shipping_addr[:80]}")
+
+                        best_match = None
+                        for opt in matching_options:
+                            # Extract city from dropdown option (format: "NAME, 12345, City")
+                            parts = opt['text'].split(',')
+                            if len(parts) >= 3:
+                                opt_city = _normalize_turkish(parts[-1].strip())
+                                if opt_city in shipping_norm:
+                                    best_match = opt
+                                    robot_logger.info(f"[{self.SUPPLIER_NAME}] City match: '{opt_city}' found in address → '{opt['text']}'")
+                                    break
+
+                        matched_option = best_match or matching_options[0]
+                        if not best_match:
+                            robot_logger.warning(f"[{self.SUPPLIER_NAME}] No city match in address, using first: '{matched_option['text']}'")
+
                     if matched_option:
                         break
 
@@ -893,7 +917,7 @@ class MannHummelRobot(BaseRobot):
         # Key: the real order number is NOT "1" - it's a multi-digit number
         import re
         order_number = None
-        max_wait = 180  # seconds - can take minutes for large orders
+        max_wait = 360  # large orders (100+ items) can take 5+ min
         poll_interval = 2  # seconds
         elapsed = 0
 
